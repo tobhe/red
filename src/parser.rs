@@ -46,6 +46,7 @@ pub enum Command {
 	Read,		// ($)r		Reads file to after the addressed line
 	Number,		// (.,.)n	Print lines with index
 	Print,		// (.,.)p	Print lines
+	Prompt,		// P		Enable * prompt
 	Quit		// q		Quit
 }
 
@@ -58,6 +59,7 @@ pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>)> {
 		parse_insert,
 		parse_number,
 		parse_print,
+		parse_prompt,
 		parse_read,
 	    ))),
 	))(i))?;
@@ -89,6 +91,11 @@ fn parse_number(i: &str) -> IResult<&str, Command> {
 fn parse_print(i: &str) -> IResult<&str, Command> {
 	let (i, _) = char('p')(i)?;
 	Ok((i, Command::Print))
+}
+
+fn parse_prompt(i: &str) -> IResult<&str, Command> {
+	let (i, _) = char('P')(i)?;
+	Ok((i, Command::Prompt))
 }
 
 fn parse_read(i: &str) -> IResult<&str, Command> {

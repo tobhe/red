@@ -21,8 +21,8 @@ pub enum Line {
 
 #[derive(Debug)]
 pub struct Range {
-	from: Line,
-	to: Line,
+	pub from: Line,
+	pub to: Line,
 }
 
 /*
@@ -52,6 +52,7 @@ pub fn parse_command(i: &str) -> IResult<&str, Command> {
 		parse_insert,
 		parse_number,
 		parse_print,
+		parse_read,
 	))(i)
 }
 
@@ -120,6 +121,16 @@ fn parse_range_special(i: &str) -> IResult<&str, Range> {
 	}
 }
 
+fn parse_range_tuple(i: &str) -> IResult<&str, Range> {
+	// XXX:	addresses:	. $ - + %
+	//	ranges:		, ;
+	let (i, f) = parse_line(i)?;
+	let (i, _) = char(',')(i)?;
+	let (i, t) = parse_line(i)?;
+	let r = Range{from: f, to: t};
+	Ok((i, r))
+}
+
 fn parse_sign(i: &str) -> IResult<&str, char> {
 	alt((char('+'), char('-')))(i)
 }
@@ -145,17 +156,6 @@ fn parse_line_regular(i: &str) -> IResult<&str, Line> {
 	let (i, o) = i32(i)?;
 	match pref {
 		Ok(_) => Ok((i, Line::Rel(o))),
-		_ => Ok((i, Line::Abs(o)))
+		_ => Ok((i, Line::Abs(o - 1)))
 	}
 }
-
-fn parse_range_tuple(i: &str) -> IResult<&str, Range> {
-	// XXX:	addresses:	. $ - + %
-	//	ranges:		, ;
-	let (i, f) = parse_line(i)?;
-	let (i, _) = char(',')(i)?;
-	let (i, t) = parse_line(i)?;
-	let r = Range{from: f, to: t};
-	Ok((i, r))
-}
-

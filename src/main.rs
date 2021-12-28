@@ -1,12 +1,11 @@
 mod parser;
 mod error;
 
-extern crate nom;
-
 use crate::parser::{
 	parse_command,
 	Command,
-	Line
+	Line,
+	Range
 };
 use crate::error::CommandError;
 use std::str::Lines;
@@ -52,26 +51,33 @@ fn update_line(s: &mut State, l: Line) -> Result<u32> {
 	}
 }
 
-fn handle_command(s: &mut State, c: Command) -> Result<()> {
+fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 	match c {
-		Command::Goto(l) => {
-			s.line = update_line(s, l)?
+		(l, None) => {
+			s.line = update_line(s, l.from)?
 		},
-		Command::Print(r) =>  {
+		(r, Some(Command::Print)) => {
 			let from = update_line(s, r.from)?;
 			let to = update_line(s, r.to)?;
 			s.buffer.lines().skip(usize::try_from(from)?)
 			    .take(usize::try_from(to)? - usize::try_from(from)? + 1)
 			    .for_each(|s| {println!("{}", s);});
 		},
-		Command::Number(r) =>  {
+		(r, Some(Command::Number)) =>  {
 			let from = update_line(s, r.from)?;
 			let to = update_line(s, r.to)?;
-			s.buffer.lines().skip(usize::try_from(from)?).enumerate()
+			s.buffer.lines().enumerate().skip(usize::try_from(from)?)
 			    .take(usize::try_from(to)? - usize::try_from(from)? + 1)
 			    .for_each(|(i, s)| {println!("{:<4} {}", i + 1, s);});
 		},
-		_ => {}
+/*
+		(l, Command::Goto) => {
+			s.line = update_line(s, l.from)?
+		},
+*/
+		_ => {
+			return Err(CommandError::new("Invalid command"));
+		}
 	}
 	Ok(())
 }
@@ -95,7 +101,7 @@ fn main() {
 			Ok(n) => {	
 				parse_command(&input)
 				    .or(Err(CommandError::new("Invalid Command")))
-				    .and_then(|(_, i)| {handle_command(&mut state, i)})
+				    .and_then(|(_, t)| {handle_command(&mut state, t)})
 				    .unwrap_or_else(|e| {println!("? ({})", e);});
 			}
 			Err(error) => {

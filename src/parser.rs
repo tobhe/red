@@ -125,13 +125,13 @@ fn parse_sign(i: &str) -> IResult<&str, char> {
 }
 
 fn parse_line(i: &str) -> IResult<&str, Line> {
-	alt((parse_line_special, parse_line_regular))(i)
+	alt((parse_line_regular, parse_line_special))(i)
 }
 
 fn parse_line_special(i: &str) -> IResult<&str, Line> {
 	match alt((char('.'), char('$'), char('+'), char('-')))(i) {
 		Ok((i, '.')) => Ok((i, Line::Rel(0))),
-		Ok((i, '$')) => Ok((i, Line::Abs(1))),
+		Ok((i, '$')) => Ok((i, Line::Abs(-1))),
 		Ok((i, '+')) => Ok((i, Line::Rel(1))),
 		Ok((i, '-')) => Ok((i, Line::Rel(-1))),
 		Err(e) => Err(e),

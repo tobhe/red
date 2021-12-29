@@ -8,11 +8,11 @@ use crate::parser::{
 	Range
 };
 use crate::error::CommandError;
-use std::str::Lines;
 use std::fs;
 use std::env;
 use std::io::{self, Write};
 use std::convert::TryFrom;
+use std::process;
 
 type Result<T> = std::result::Result<T, CommandError>;
 
@@ -30,12 +30,11 @@ enum Mode {
 }
 
 // Load new file
-fn load_file(s: &str) -> State {
-	let buf = fs::read_to_string(&s)
-	    .expect("Something went wrong reading the file");
+fn load_file(s: &str) -> Result<State> {
+	let buf = fs::read_to_string(&s).map_err(|_| CommandError::new("Invalid path"))?;
 	println!("{}", buf.as_bytes().len());
-	State {line: 0, total: buf.lines().count(),
-	    mode: Mode::CommandMode, buffer: buf, prompt: false}
+	Ok(State {line: 0, total: buf.lines().count(),
+	    mode: Mode::CommandMode, buffer: buf, prompt: false})
 }
 
 fn update_line(s: &mut State, l: Line) -> Result<u32> {
@@ -63,7 +62,12 @@ fn update_line(s: &mut State, l: Line) -> Result<u32> {
 fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 	match c {
 		(l, None) => {
-			s.line = update_line(s, l.from)?
+			if l.from != l.to {
+				return Err(CommandError::new("Expected single line"));
+			}
+			s.line = update_line(s, l.from)?;
+			println!("{}", s.buffer.lines().nth(usize::try_from(s.line)?)
+			    .ok_or(CommandError::new("Invalid Address"))?);
 		},
 		(r, Some(Command::Print)) => {
 			let from = update_line(s, r.from)?;
@@ -82,6 +86,15 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 		(_, Some(Command::Prompt)) => {
 			s.prompt = !s.prompt; 
 		},
+		(_, Some(Command::Edit(f))) => {
+			*s = load_file(&f)?;
+		},
+		(_, Some(Command::CurLine)) => {
+			println!("{}", s.line);
+		},
+		(_, Some(Command::Quit)) => {
+			process::exit(0);
+		},
 /*
 		(l, Command::Goto) => {
 			s.line = update_line(s, l.from)?
@@ -97,7 +110,7 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 fn main() {
 	let args: Vec<String> = env::args().collect();
 	let mut state = if args.len() == 2 {
-		load_file(&args[1])
+		load_file(&args[1]).unwrap()
 	} else {
 		State {line: 0, total: 0, mode: Mode::CommandMode,
 		    buffer: String::from(""), prompt: false}
@@ -105,12 +118,12 @@ fn main() {
 
 	loop {
 		let mut input = String::new();
-		if (state.prompt == true) {
+		if state.prompt == true {
 			print!("* ");
 		}
 		io::stdout().flush().unwrap();
 		match io::stdin().read_line(&mut input) {
-			Ok(n) => {	
+			Ok(_) => {
 				parse_command(&input)
 				    .or(Err(CommandError::new("Invalid Command")))
 				    .and_then(|(_, t)| {handle_command(&mut state, t)})

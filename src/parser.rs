@@ -8,13 +8,15 @@ use nom::{
 	branch::alt,
 	combinator::opt,
 	sequence::tuple,
-	Parser,
+	character::is_newline,
 	character::complete::char,
 	character::complete::i32,
 	character::complete::newline,
+	sequence::terminated,
+	InputTakeAtPosition
 };
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Line {
 	Rel(i32),
 	Abs(i32),
@@ -39,9 +41,10 @@ pub enum Command {
 	Append,		// (.)a		Append text to the buffer
 	Change,		// (.,.)c	Change line in buffer
 	Edit(String),	// e file	Edit file
-	EditU(String),	// E file	Edit file uncoditionally
+	EditU(String),	// E file	Edit file unconditionally
 	FName(String),	// f file	Set default filename to file
 	Goto,		// n		Go to line
+	CurLine,	// =		Print line number
 	Insert,		// (.)i		Insert text before current line
 	Read,		// ($)r		Reads file to after the addressed line
 	Number,		// (.,.)n	Print lines with index
@@ -51,19 +54,21 @@ pub enum Command {
 }
 
 pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>)> {
-	let (i, (r, c)) = (tuple((
+	let (i, (r, c)) = terminated(tuple((
 	    opt(parse_range),
 	    opt(alt((
 		parse_append,
 		parse_change,
 		parse_insert,
 		parse_number,
+		parse_edit,
+		parse_curline,
 		parse_print,
 		parse_prompt,
 		parse_read,
+		parse_quit,
 	    ))),
-	))(i))?;
-	let (i, _) = newline(i)?;
+	)), newline)(i)?;
 	Ok((i, (r.unwrap_or_default(), c)))
 }
 
@@ -78,9 +83,24 @@ fn parse_change(i: &str) -> IResult<&str, Command> {
 	Ok((i, Command::Change))
 }
 
+fn parse_edit(i: &str) -> IResult<&str, Command> {
+	let (i, _) = tuple((char('e'), char(' ')))(i)?;
+	let (i, s) = parse_path(i)?;
+	Ok((i, Command::Edit(s.to_string())))
+}
+
+fn parse_path(i: &str) -> IResult<&str, &str> {
+	i.split_at_position1_complete(|item| is_newline(item as u8), ErrorKind::Fail)
+}
+
 fn parse_insert(i: &str) -> IResult<&str, Command> {
 	let (i, _) = char('i')(i)?;
 	Ok((i, Command::Insert))
+}
+
+fn parse_curline(i: &str) -> IResult<&str, Command> {
+	let (i, _) = char('=')(i)?;
+	Ok((i, Command::CurLine))
 }
 
 fn parse_number(i: &str) -> IResult<&str, Command> {
@@ -101,6 +121,11 @@ fn parse_prompt(i: &str) -> IResult<&str, Command> {
 fn parse_read(i: &str) -> IResult<&str, Command> {
 	let (i, _) = char('r')(i)?;
 	Ok((i, Command::Read))
+}
+
+fn parse_quit(i: &str) -> IResult<&str, Command> {
+	let (i, _) = char('q')(i)?;
+	Ok((i, Command::Quit))
 }
 
 // Helpers

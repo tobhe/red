@@ -1,4 +1,3 @@
-use std::error;
 use std::error::Error;
 use std::fmt;
 use std::num::TryFromIntError;
@@ -28,6 +27,6 @@ impl Error for CommandError {
 
 impl From<TryFromIntError> for CommandError {
 	fn from(err: TryFromIntError) -> Self {
-		CommandError::new(err.description())
+		CommandError::new(&err.to_string())
 	}
 }

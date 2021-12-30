@@ -3,6 +3,7 @@ mod error;
 
 use crate::parser::{
 	parse_command,
+	parse_terminator,
 	Command,
 	Line,
 	Range
@@ -24,9 +25,10 @@ struct State {
 	prompt: bool,
 }
 
+#[derive(PartialEq)]
 enum Mode {
 	CommandMode,
-	InsertMode,
+	InsertMode(usize, String),
 }
 
 // Load new file
@@ -86,11 +88,18 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 		(_, Some(Command::Prompt)) => {
 			s.prompt = !s.prompt; 
 		},
+		(l, Some(Command::Insert)) => {
+			if l.from != l.to {
+				return Err(CommandError::new("Expected single line"));
+			}
+			let line = update_line(s, l.from)?;
+			s.mode = Mode::InsertMode(usize::try_from(line)?, String::new());
+		},
 		(_, Some(Command::Edit(f))) => {
 			*s = load_file(&f)?;
 		},
 		(_, Some(Command::CurLine)) => {
-			println!("{}", s.line);
+			println!("{}", s.line + 1);
 		},
 		(_, Some(Command::Quit)) => {
 			process::exit(0);
@@ -118,20 +127,33 @@ fn main() {
 
 	loop {
 		let mut input = String::new();
-		if state.prompt == true {
+		if state.mode == Mode::CommandMode && state.prompt == true {
 			print!("* ");
+			io::stdout().flush().unwrap();
 		}
-		io::stdout().flush().unwrap();
-		match io::stdin().read_line(&mut input) {
-			Ok(_) => {
+		if let Err(_) = io::stdin().read_line(&mut input) {
+			// XXX: error?
+			continue;
+		}
+		match state.mode {
+			Mode::CommandMode => {
 				parse_command(&input)
 				    .or(Err(CommandError::new("Invalid Command")))
 				    .and_then(|(_, t)| {handle_command(&mut state, t)})
 				    .unwrap_or_else(|e| {println!("? ({})", e);});
-			}
-			Err(error) => {
-			    println!("error: {}", error);
-			}
+			},
+			Mode::InsertMode(l, ref mut b) => {
+				if parse_terminator(&input).is_ok() {
+					// Write to buf
+					let head = state.buffer.lines().take(l);
+					let tail = state.buffer.lines().skip(l);
+					state.buffer = head.chain(b.lines()).chain(tail).fold(String::new(), |s, l| s + l + "\n");
+					state.total = state.buffer.lines().count();
+					state.mode = Mode::CommandMode;
+				} else {
+					b.push_str(&input);
+				}
+			},
 		}
 	}
 }

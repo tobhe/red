@@ -128,6 +128,12 @@ fn parse_quit(i: &str) -> IResult<&str, Command> {
 	Ok((i, Command::Quit))
 }
 
+// Insert Mode
+pub fn parse_terminator(i: &str) -> IResult<&str, Command> {
+	let (i, _) = terminated(char('.'), newline)(i)?;
+	Ok((i, Command::Append))
+}
+
 // Helpers
 fn parse_range(i: &str) -> IResult<&str, Range> {
 	alt((
@@ -177,7 +183,7 @@ fn parse_line_special(i: &str) -> IResult<&str, Line> {
 		Ok((i, '-')) => Ok((i, Line::Rel(-1))),
 		Err(e) => Err(e),
 		// This should not happen but silences the compiler
-		_ => Err(Err::Error(Error::new(" line", ErrorKind::Fail)))
+		_ => Err(Err::Error(Error::new("line", ErrorKind::Fail)))
 	}
 }
 
@@ -186,6 +192,13 @@ fn parse_line_regular(i: &str) -> IResult<&str, Line> {
 	let (i, o) = i32(i)?;
 	match pref {
 		Ok(_) => Ok((i, Line::Rel(o))),
-		_ => Ok((i, Line::Abs(o - 1)))
+		_ => {
+			if o > 0 {
+				Ok((i, Line::Abs(o - 1)))
+			} else {
+				return Err(Err::Error(Error::new("line",
+				    ErrorKind::Fail)))
+			}
+		}
 	}
 }

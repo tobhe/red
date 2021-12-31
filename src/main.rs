@@ -87,6 +87,16 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 			    .nth(usize::try_from(s.line)?)
 			    .ok_or(CommandError::new("Invalid Address"))?);
 		},
+		(r, Some(Command::Change)) => {
+			let from = update_line(s, r.from)?;
+			let to = update_line(s, r.to)?;
+			let head = s.buffer.lines().take(usize::try_from(from)?);
+			let tail = s.buffer.lines().skip(usize::try_from(to)? + 1);
+			s.buffer = head.chain(tail).fold(String::new(),
+			    |e, l| e + l + "\n");
+			s.total = s.buffer.lines().count();
+			s.mode = Mode::InsertMode(usize::try_from(from)?, String::new());
+		},
 		(_, Some(Command::CurLine)) => {
 			println!("{}", s.line + 1);
 		},

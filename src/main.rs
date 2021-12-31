@@ -170,10 +170,7 @@ fn main() {
 			print!("* ");
 			io::stdout().flush().unwrap();
 		}
-		if let Err(_) = io::stdin().read_line(&mut input) {
-			// XXX: error?
-			continue;
-		}
+		io::stdin().read_line(&mut input).unwrap();
 		match state.mode {
 			Mode::CommandMode => {
 				parse_command(&input)

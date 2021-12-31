@@ -44,7 +44,6 @@ pub enum Command {
 	Edit(String),	// e file	Edit file
 	EditU(String),	// E file	Edit file unconditionally
 	FName(String),	// f file	Set default filename to file
-	Goto,		// n		Go to line
 	CurLine,	// =		Print line number
 	Insert,		// (.)i		Insert text before current line
 	Read,		// ($)r		Reads file to after the addressed line

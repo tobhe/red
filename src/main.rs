@@ -32,14 +32,14 @@ enum Mode {
 }
 
 fn read_file(f: &str) -> Result<State> {
-	let buf = fs::read_to_string(&f).map_err(|e| CommandError::new("Invalid path"))?;
+	let buf = fs::read_to_string(&f).map_err(|_| CommandError::new("Invalid path"))?;
 	println!("{}", buf.as_bytes().len());
 	Ok(State {line: 0, total: buf.lines().count(),
 	    mode: Mode::CommandMode, buffer: buf, prompt: false})
 }
 
 fn write_file(s: &State, f: &str) -> Result<()> {
-	fs::write(f, s.buffer.as_str()).map_err(|e| CommandError::new("Invalid path"))?;
+	fs::write(f, s.buffer.as_str()).map_err(|_| CommandError::new("Invalid path"))?;
 	Ok(())
 }
 

@@ -42,7 +42,13 @@ fn read_file(f: &str) -> Result<State> {
 	let buf = fs::read_to_string(&f)
 	    .map_err(|_| CommandError::new("Invalid path"))?;
 	println!("{}", buf.as_bytes().len());
-	Ok(State {line: 0, total: buf.lines().count(),
+	let total = buf.lines().count();
+	let last = if total > 0 {
+		total - 1
+	} else {
+		total
+	};
+	Ok(State {line: u32::try_from(last)?, total: total,
 	    mode: Mode::CommandMode, buffer: buf, prompt: false,
 	    file: String::from(f)})
 }
@@ -113,7 +119,7 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 			*s = read_file(&f)?;
 		},
 		(_, Some(Command::Exec(c))) => {
-			let out = process::Command::new("sh").arg("-c").arg(c).status()
+			process::Command::new("sh").arg("-c").arg(c).status()
 			    .map_err(|_| CommandError::new("Command failed"))?;
 			println!("!");
 		},

@@ -71,22 +71,11 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 			println!("{}", s.buffer.lines().nth(usize::try_from(s.line)?)
 			    .ok_or(CommandError::new("Invalid Address"))?);
 		},
-		(r, Some(Command::Print)) => {
-			let from = update_line(s, r.from)?;
-			let to = update_line(s, r.to)?;
-			s.buffer.lines().skip(usize::try_from(from)?)
-			    .take(usize::try_from(to)? - usize::try_from(from)? + 1)
-			    .for_each(|s| {println!("{}", s);});
+		(_, Some(Command::CurLine)) => {
+			println!("{}", s.line + 1);
 		},
-		(r, Some(Command::Number)) => {
-			let from = update_line(s, r.from)?;
-			let to = update_line(s, r.to)?;
-			s.buffer.lines().enumerate().skip(usize::try_from(from)?)
-			    .take(usize::try_from(to)? - usize::try_from(from)? + 1)
-			    .for_each(|(i, s)| {println!("{:<4} {}", i + 1, s);});
-		},
-		(_, Some(Command::Prompt)) => {
-			s.prompt = !s.prompt; 
+		(_, Some(Command::Edit(f))) => {
+			*s = load_file(&f)?;
 		},
 		(l, Some(Command::Insert)) => {
 			if l.from != l.to {
@@ -95,20 +84,26 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 			let line = update_line(s, l.from)?;
 			s.mode = Mode::InsertMode(usize::try_from(line)?, String::new());
 		},
-		(_, Some(Command::Edit(f))) => {
-			*s = load_file(&f)?;
+		(r, Some(Command::Number)) => {
+			let from = update_line(s, r.from)?;
+			let to = update_line(s, r.to)?;
+			s.buffer.lines().enumerate().skip(usize::try_from(from)?)
+			    .take(usize::try_from(to)? - usize::try_from(from)? + 1)
+			    .for_each(|(i, s)| {println!("{:<4} {}", i + 1, s);});
 		},
-		(_, Some(Command::CurLine)) => {
-			println!("{}", s.line + 1);
+		(r, Some(Command::Print)) => {
+			let from = update_line(s, r.from)?;
+			let to = update_line(s, r.to)?;
+			s.buffer.lines().skip(usize::try_from(from)?)
+			    .take(usize::try_from(to)? - usize::try_from(from)? + 1)
+			    .for_each(|s| {println!("{}", s);});
+		},
+		(_, Some(Command::Prompt)) => {
+			s.prompt = !s.prompt;
 		},
 		(_, Some(Command::Quit)) => {
 			process::exit(0);
 		},
-/*
-		(l, Command::Goto) => {
-			s.line = update_line(s, l.from)?
-		},
-*/
 		_ => {
 			return Err(CommandError::new("Invalid command"));
 		}

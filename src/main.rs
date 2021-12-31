@@ -18,7 +18,7 @@ use std::process;
 type Result<T> = std::result::Result<T, CommandError>;
 
 struct State {
-	line: u32,
+	line: usize,
 	total: usize,
 	mode: Mode,
 	buffer: String,
@@ -48,9 +48,8 @@ fn read_file(f: &str) -> Result<State> {
 	} else {
 		total
 	};
-	Ok(State {line: u32::try_from(last)?, total: total,
-	    mode: Mode::CommandMode, buffer: buf, prompt: false,
-	    file: String::from(f)})
+	Ok(State {line: last, total: total, mode: Mode::CommandMode,
+	    buffer: buf, prompt: false, file: String::from(f)})
 }
 
 fn write_file(s: &State, f: &str) -> Result<()> {
@@ -59,22 +58,21 @@ fn write_file(s: &State, f: &str) -> Result<()> {
 	Ok(())
 }
 
-fn update_line(s: &mut State, l: Line) -> Result<u32> {
+fn update_line(s: &mut State, l: Line) -> Result<usize> {
 	let newline = match l {
 		Line::Abs(c) => {
 			if c < 0 {
-				u32::try_from(i64::try_from(s.total)?
-				    + i64::from(c))?
+				usize::try_from(i32::try_from(s.total)?
+				    + c)?
 			} else {
-				u32::try_from(c)?
+				usize::try_from(c)?
 			}
 		},
 		Line::Rel(c) => {
-			u32::try_from(i64::from(s.line)
-			    + i64::from(c))?
+			usize::try_from(i32::try_from(s.line)?  + c)?
 		}
 	};
-	if newline < u32::try_from(s.total)? {
+	if newline < s.total {
 		Ok(newline)
 	} else {
 		Err(CommandError::new("Invalid address"))
@@ -89,19 +87,18 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 				    CommandError::new("Expected single line"));
 			}
 			s.line = update_line(s, l.from)?;
-			println!("{}", s.buffer.lines()
-			    .nth(usize::try_from(s.line)?)
+			println!("{}", s.buffer.lines().nth(s.line)
 			    .ok_or(CommandError::new("Invalid Address"))?);
 		},
 		(r, Some(Command::Change)) => {
 			let from = update_line(s, r.from)?;
 			let to = update_line(s, r.to)?;
-			let head = s.buffer.lines().take(usize::try_from(from)?);
-			let tail = s.buffer.lines().skip(usize::try_from(to)? + 1);
+			let head = s.buffer.lines().take(from);
+			let tail = s.buffer.lines().skip(to + 1);
 			s.buffer = head.chain(tail).fold(String::new(),
 			    |e, l| e + l + "\n");
 			s.total = s.buffer.lines().count();
-			s.mode = Mode::InsertMode(usize::try_from(from)?, String::new());
+			s.mode = Mode::InsertMode(from, String::new());
 		},
 		(_, Some(Command::CurLine)) => {
 			println!("{}", s.line + 1);
@@ -109,8 +106,8 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 		(r, Some(Command::Delete)) => {
 			let from = update_line(s, r.from)?;
 			let to = update_line(s, r.to)?;
-			let head = s.buffer.lines().take(usize::try_from(from)?);
-			let tail = s.buffer.lines().skip(usize::try_from(to)? + 1);
+			let head = s.buffer.lines().take(from);
+			let tail = s.buffer.lines().skip(to + 1);
 			s.buffer = head.chain(tail).fold(String::new(),
 			    |e, l| e + l + "\n");
 			s.total = s.buffer.lines().count();
@@ -128,20 +125,19 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 				return Err(CommandError::new("Expected single line"));
 			}
 			let line = update_line(s, l.from)?;
-			s.mode = Mode::InsertMode(usize::try_from(line)?, String::new());
+			s.mode = Mode::InsertMode(line, String::new());
 		},
 		(r, Some(Command::Number)) => {
 			let from = update_line(s, r.from)?;
 			let to = update_line(s, r.to)?;
-			s.buffer.lines().enumerate().skip(usize::try_from(from)?)
-			    .take(usize::try_from(to)? - usize::try_from(from)? + 1)
+			s.buffer.lines().enumerate().skip(from)
+			    .take(to - from + 1)
 			    .for_each(|(i, s)| {println!("{:<4} {}", i + 1, s);});
 		},
 		(r, Some(Command::Print)) => {
 			let from = update_line(s, r.from)?;
 			let to = update_line(s, r.to)?;
-			s.buffer.lines().skip(usize::try_from(from)?)
-			    .take(usize::try_from(to)? - usize::try_from(from)? + 1)
+			s.buffer.lines().skip(from).take(to - from + 1)
 			    .for_each(|s| {println!("{}", s);});
 		},
 		(_, Some(Command::Prompt)) => {

@@ -31,12 +31,16 @@ enum Mode {
 	InsertMode(usize, String),
 }
 
-// Load new file
-fn load_file(s: &str) -> Result<State> {
-	let buf = fs::read_to_string(&s).map_err(|_| CommandError::new("Invalid path"))?;
+fn read_file(f: &str) -> Result<State> {
+	let buf = fs::read_to_string(&f).map_err(|e| CommandError::new("Invalid path"))?;
 	println!("{}", buf.as_bytes().len());
 	Ok(State {line: 0, total: buf.lines().count(),
 	    mode: Mode::CommandMode, buffer: buf, prompt: false})
+}
+
+fn write_file(s: &State, f: &str) -> Result<()> {
+	fs::write(f, s.buffer.as_str()).map_err(|e| CommandError::new("Invalid path"))?;
+	Ok(())
 }
 
 fn update_line(s: &mut State, l: Line) -> Result<u32> {
@@ -74,8 +78,17 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 		(_, Some(Command::CurLine)) => {
 			println!("{}", s.line + 1);
 		},
+		(r, Some(Command::Delete)) => {
+			let from = update_line(s, r.from)?;
+			let to = update_line(s, r.to)?;
+			let head = s.buffer.lines().take(usize::try_from(from)?);
+			let tail = s.buffer.lines().skip(usize::try_from(to)? + 1);
+			s.buffer = head.chain(tail).fold(String::new(),
+			    |e, l| e + l + "\n");
+			s.total = s.buffer.lines().count();
+		},
 		(_, Some(Command::Edit(f))) => {
-			*s = load_file(&f)?;
+			*s = read_file(&f)?;
 		},
 		(l, Some(Command::Insert)) => {
 			if l.from != l.to {
@@ -101,6 +114,9 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 		(_, Some(Command::Prompt)) => {
 			s.prompt = !s.prompt;
 		},
+		(_, Some(Command::Write(f))) => {
+			write_file(s, &f)?;
+		},
 		(_, Some(Command::Quit)) => {
 			process::exit(0);
 		},
@@ -114,7 +130,7 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 fn main() {
 	let args: Vec<String> = env::args().collect();
 	let mut state = if args.len() == 2 {
-		load_file(&args[1]).unwrap()
+		read_file(&args[1]).unwrap()
 	} else {
 		State {line: 0, total: 0, mode: Mode::CommandMode,
 		    buffer: String::from(""), prompt: false}

@@ -40,6 +40,7 @@ impl Default for Range {
 pub enum Command {
 	Append,		// (.)a		Append text to the buffer
 	Change,		// (.,.)c	Change line in buffer
+	Delete,		// (.,.)d	Delete lines
 	Edit(String),	// e file	Edit file
 	EditU(String),	// E file	Edit file unconditionally
 	FName(String),	// f file	Set default filename to file
@@ -50,6 +51,7 @@ pub enum Command {
 	Number,		// (.,.)n	Print lines with index
 	Print,		// (.,.)p	Print lines
 	Prompt,		// P		Enable * prompt
+	Write(String),	// w file	Write buffer to file
 	Quit		// q		Quit
 }
 
@@ -59,6 +61,7 @@ pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>)> {
 	    opt(alt((
 		parse_append,
 		parse_change,
+		parse_delete,
 		parse_insert,
 		parse_number,
 		parse_edit,
@@ -66,6 +69,7 @@ pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>)> {
 		parse_print,
 		parse_prompt,
 		parse_read,
+		parse_write,
 		parse_quit,
 	    ))),
 	)), newline)(i)?;
@@ -83,10 +87,21 @@ fn parse_change(i: &str) -> IResult<&str, Command> {
 	Ok((i, Command::Change))
 }
 
+fn parse_delete(i: &str) -> IResult<&str, Command> {
+	let (i, _) = char('d')(i)?;
+	Ok((i, Command::Delete))
+}
+
 fn parse_edit(i: &str) -> IResult<&str, Command> {
 	let (i, _) = tuple((char('e'), char(' ')))(i)?;
 	let (i, s) = parse_path(i)?;
 	Ok((i, Command::Edit(s.to_string())))
+}
+
+fn parse_write(i: &str) -> IResult<&str, Command> {
+	let (i, _) = tuple((char('w'), char(' ')))(i)?;
+	let (i, s) = parse_path(i)?;
+	Ok((i, Command::Write(s.to_string())))
 }
 
 fn parse_path(i: &str) -> IResult<&str, &str> {

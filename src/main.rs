@@ -112,6 +112,11 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 		(_, Some(Command::Edit(f))) => {
 			*s = read_file(&f)?;
 		},
+		(_, Some(Command::Exec(c))) => {
+			let out = process::Command::new("sh").arg("-c").arg(c).status()
+			    .map_err(|_| CommandError::new("Command failed"))?;
+			println!("!");
+		},
 		(l, Some(Command::Insert)) => {
 			if l.from != l.to {
 				return Err(CommandError::new("Expected single line"));

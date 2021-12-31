@@ -9,6 +9,7 @@ use nom::{
 	combinator::opt,
 	sequence::tuple,
 	character::is_newline,
+	character::complete::anychar,
 	character::complete::char,
 	character::complete::i32,
 	character::complete::newline,
@@ -43,6 +44,7 @@ pub enum Command {
 	Delete,		// (.,.)d	Delete lines
 	Edit(String),	// e file	Edit file
 	EditU(String),	// E file	Edit file unconditionally
+	Exec(String),	// !cmd		Execute command
 	FName(String),	// f file	Set default filename to file
 	CurLine,	// =		Print line number
 	Insert,		// (.)i		Insert text before current line
@@ -58,37 +60,32 @@ pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>)> {
 	let (i, (r, c)) = terminated(tuple((
 	    opt(parse_range),
 	    opt(alt((
-		parse_append,
-		parse_change,
-		parse_delete,
-		parse_insert,
-		parse_number,
+		parse_command_char,
 		parse_edit,
-		parse_curline,
-		parse_print,
-		parse_prompt,
-		parse_read,
+		parse_exec,
 		parse_write,
-		parse_quit,
 	    ))),
 	)), newline)(i)?;
 	Ok((i, (r.unwrap_or_default(), c)))
 }
 
 // Commands
-fn parse_append(i: &str) -> IResult<&str, Command> {
-	let (i, _) = char('a')(i)?;
-	Ok((i, Command::Append))
-}
-
-fn parse_change(i: &str) -> IResult<&str, Command> {
-	let (i, _) = char('c')(i)?;
-	Ok((i, Command::Change))
-}
-
-fn parse_delete(i: &str) -> IResult<&str, Command> {
-	let (i, _) = char('d')(i)?;
-	Ok((i, Command::Delete))
+fn parse_command_char(i: &str) -> IResult<&str, Command> {
+	let (i, c) = anychar(i)?;
+	let cmd = match c {
+		'a' => Command::Append,
+		'c' => Command::Change,
+		'd' => Command::Delete,
+		'i' => Command::Insert,
+		'n' => Command::Number,
+		'P' => Command::Prompt,
+		'p' => Command::Print,
+		'q' => Command::Quit,
+		'r' => Command::Read,
+		'=' => Command::CurLine,
+		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char)))
+	};
+	Ok((i, cmd))
 }
 
 fn parse_edit(i: &str) -> IResult<&str, Command> {
@@ -103,43 +100,14 @@ fn parse_write(i: &str) -> IResult<&str, Command> {
 	Ok((i, Command::Write(s.to_string())))
 }
 
+fn parse_exec(i: &str) -> IResult<&str, Command> {
+	let (i, _) = char('!')(i)?;
+	let (i, s) = parse_path(i)?;
+	Ok((i, Command::Exec(s.to_string())))
+}
+
 fn parse_path(i: &str) -> IResult<&str, &str> {
 	i.split_at_position1_complete(|item| is_newline(item as u8), ErrorKind::Fail)
-}
-
-fn parse_insert(i: &str) -> IResult<&str, Command> {
-	let (i, _) = char('i')(i)?;
-	Ok((i, Command::Insert))
-}
-
-fn parse_curline(i: &str) -> IResult<&str, Command> {
-	let (i, _) = char('=')(i)?;
-	Ok((i, Command::CurLine))
-}
-
-fn parse_number(i: &str) -> IResult<&str, Command> {
-	let (i, _) = char('n')(i)?;
-	Ok((i, Command::Number))
-}
-
-fn parse_print(i: &str) -> IResult<&str, Command> {
-	let (i, _) = char('p')(i)?;
-	Ok((i, Command::Print))
-}
-
-fn parse_prompt(i: &str) -> IResult<&str, Command> {
-	let (i, _) = char('P')(i)?;
-	Ok((i, Command::Prompt))
-}
-
-fn parse_read(i: &str) -> IResult<&str, Command> {
-	let (i, _) = char('r')(i)?;
-	Ok((i, Command::Read))
-}
-
-fn parse_quit(i: &str) -> IResult<&str, Command> {
-	let (i, _) = char('q')(i)?;
-	Ok((i, Command::Quit))
 }
 
 // Insert Mode

@@ -23,6 +23,13 @@ struct State {
 	mode: Mode,
 	buffer: String,
 	prompt: bool,
+	file: String,
+}
+
+impl Default for State {
+	fn default() -> Self{State {line: 0, total: 0, mode: Mode::CommandMode,
+	    buffer: String::from(""), prompt: false,
+	    file: String::new()}}
 }
 
 #[derive(PartialEq)]
@@ -32,14 +39,17 @@ enum Mode {
 }
 
 fn read_file(f: &str) -> Result<State> {
-	let buf = fs::read_to_string(&f).map_err(|_| CommandError::new("Invalid path"))?;
+	let buf = fs::read_to_string(&f)
+	    .map_err(|_| CommandError::new("Invalid path"))?;
 	println!("{}", buf.as_bytes().len());
 	Ok(State {line: 0, total: buf.lines().count(),
-	    mode: Mode::CommandMode, buffer: buf, prompt: false})
+	    mode: Mode::CommandMode, buffer: buf, prompt: false,
+	    file: String::from(f)})
 }
 
 fn write_file(s: &State, f: &str) -> Result<()> {
-	fs::write(f, s.buffer.as_str()).map_err(|_| CommandError::new("Invalid path"))?;
+	fs::write(f, s.buffer.as_str())
+	    .map_err(|_| CommandError::new("Invalid path"))?;
 	Ok(())
 }
 
@@ -69,10 +79,12 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 	match c {
 		(l, None) => {
 			if l.from != l.to {
-				return Err(CommandError::new("Expected single line"));
+				return Err(
+				    CommandError::new("Expected single line"));
 			}
 			s.line = update_line(s, l.from)?;
-			println!("{}", s.buffer.lines().nth(usize::try_from(s.line)?)
+			println!("{}", s.buffer.lines()
+			    .nth(usize::try_from(s.line)?)
 			    .ok_or(CommandError::new("Invalid Address"))?);
 		},
 		(_, Some(Command::CurLine)) => {
@@ -130,10 +142,9 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 fn main() {
 	let args: Vec<String> = env::args().collect();
 	let mut state = if args.len() == 2 {
-		read_file(&args[1]).unwrap()
+		read_file(&args[1]).unwrap_or(Default::default())
 	} else {
-		State {line: 0, total: 0, mode: Mode::CommandMode,
-		    buffer: String::from(""), prompt: false}
+		Default::default()
 	};
 
 	loop {
@@ -158,7 +169,9 @@ fn main() {
 					// Write to buf
 					let head = state.buffer.lines().take(l);
 					let tail = state.buffer.lines().skip(l);
-					state.buffer = head.chain(b.lines()).chain(tail).fold(String::new(), |s, l| s + l + "\n");
+					state.buffer = head.chain(b.lines())
+					    .chain(tail).fold(String::new(),
+					    |s, l| s + l + "\n");
 					state.total = state.buffer.lines().count();
 					state.mode = Mode::CommandMode;
 				} else {

@@ -167,8 +167,6 @@ fn parse_range_special(i: &str) -> IResult<&str, Range> {
 }
 
 fn parse_range_tuple(i: &str) -> IResult<&str, Range> {
-	// XXX:	addresses:	. $ - + %
-	//	ranges:		, ;
 	let (i, f) = parse_line(i)?;
 	let (i, _) = char(',')(i)?;
 	let (i, t) = parse_line(i)?;

@@ -23,13 +23,13 @@ struct State {
 	mode: Mode,
 	buffer: String,
 	prompt: bool,
-	file: String,
+	_file: String,
 }
 
 impl Default for State {
 	fn default() -> Self{State {line: 0, total: 0, mode: Mode::CommandMode,
 	    buffer: String::from(""), prompt: false,
-	    file: String::new()}}
+	    _file: String::new()}}
 }
 
 #[derive(PartialEq)]
@@ -49,7 +49,7 @@ fn read_file(f: &str) -> Result<State> {
 		total
 	};
 	Ok(State {line: last, total: total, mode: Mode::CommandMode,
-	    buffer: buf, prompt: false, file: String::from(f)})
+	    buffer: buf, prompt: false, _file: String::from(f)})
 }
 
 fn write_file(s: &State, f: &str) -> Result<()> {

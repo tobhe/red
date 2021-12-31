@@ -43,9 +43,9 @@ pub enum Command {
 	Change,		// (.,.)c	Change line in buffer
 	Delete,		// (.,.)d	Delete lines
 	Edit(String),	// e file	Edit file
-	EditU(String),	// E file	Edit file unconditionally
+//	EditU(String),	// E file	Edit file unconditionally
 	Exec(String),	// !cmd		Execute command
-	FName(String),	// f file	Set default filename to file
+//	FName(String),	// f file	Set default filename to file
 	CurLine,	// =		Print line number
 	Insert,		// (.)i		Insert text before current line
 	Read,		// ($)r		Reads file to after the addressed line

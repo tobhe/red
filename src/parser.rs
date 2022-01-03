@@ -177,7 +177,7 @@ fn parse_line_special(i: &str) -> IResult<&str, Line> {
 		'.' => Line::Rel(0),
 		'$' => Line::Abs(-1),
 		'+' => Line::Rel(1),
-		'-' => Line::Rel(-1),
+		'-' | '^' => Line::Rel(-1),
 		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
 	};
 	Ok((i, line))

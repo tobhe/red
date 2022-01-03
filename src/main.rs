@@ -111,26 +111,21 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 					.ok_or(CommandError::new("invalid address"))?
 			);
 		}
-		(r, Some(Command::Change)) => {
-			let from = update_line(s, r.from)?;
-			let to = update_line(s, r.to)?;
-			let head = s.buffer.lines().take(from);
-			let tail = s.buffer.lines().skip(to + 1);
-			s.buffer = head.chain(tail).fold(String::new(), |e, l| e + l + "\n");
-			s.total = s.buffer.lines().count();
-			s.mode = Mode::InsertMode(from, String::new());
-		}
 		(_, Some(Command::CurLine)) => {
 			println!("{}", s.line + 1);
 		}
-		(r, Some(Command::Delete)) => {
+		(r, Some(com @ Command::Change)) | (r, Some(com @ Command::Delete)) => {
 			let from = update_line(s, r.from)?;
 			let to = update_line(s, r.to)?;
 			let head = s.buffer.lines().take(from);
 			let tail = s.buffer.lines().skip(to + 1);
 			s.buffer = head.chain(tail).fold(String::new(), |e, l| e + l + "\n");
 			s.total = s.buffer.lines().count();
-			s.changed = true;
+			match com {
+				Command::Change => s.mode = Mode::InsertMode(from, String::new()),
+				Command::Delete => s.changed = true,
+				_ => unreachable!(),
+			}
 		}
 		(_, Some(Command::Edit(f))) => {
 			if s.changed == true {
@@ -155,42 +150,31 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 		(_, Some(Command::File(f))) => {
 			s.file = f;
 		}
-		(l, Some(Command::Append)) => {
+		(l, Some(com @ Command::Append)) | (l, Some(com @ Command::Insert)) => {
 			if l.from != l.to {
 				return Err(CommandError::new("Expected single line"));
 			}
-			let line = update_line(s, l.from)?;
-			s.mode = Mode::InsertMode(line + 1, String::new());
-		}
-		(l, Some(Command::Insert)) => {
-			if l.from != l.to {
-				return Err(CommandError::new("Expected single line"));
-			}
-			let line = update_line(s, l.from)?;
+			let line = match com {
+				Command::Append => update_line(s, l.from)? + 1,
+				Command::Insert => update_line(s, l.from)?,
+				_ => unreachable!(),
+			};
 			s.mode = Mode::InsertMode(line, String::new());
 		}
-		(r, Some(Command::Number)) => {
+		(r, Some(com @ Command::Number)) | (r, Some(com @ Command::Print)) => {
 			let from = update_line(s, r.from)?;
 			let to = update_line(s, r.to)?;
+			let fun = match com {
+				Command::Number => |(i, s)| println!("{}\t{}", i + 1, s),
+				Command::Print => |(_, s)| println!("{}", s),
+				_ => unreachable!(),
+			};
 			s.buffer
 				.lines()
 				.enumerate()
 				.skip(from)
 				.take(to - from + 1)
-				.for_each(|(i, s)| {
-					println!("{}\t{}", i + 1, s);
-				});
-		}
-		(r, Some(Command::Print)) => {
-			let from = update_line(s, r.from)?;
-			let to = update_line(s, r.to)?;
-			s.buffer
-				.lines()
-				.skip(from)
-				.take(to - from + 1)
-				.for_each(|s| {
-					println!("{}", s);
-				});
+				.for_each(fun);
 		}
 		(_, Some(Command::Prompt)) => {
 			s.prompt = !s.prompt;

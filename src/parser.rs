@@ -49,14 +49,12 @@ impl Default for Range {
  */
 #[derive(Debug)]
 pub enum Command {
-	Append,       // (.)a		Append text to the buffer
-	Change,       // (.,.)c	Change line in buffer
-	Delete,       // (.,.)d	Delete lines
-	Edit(String), // e file	Edit file
-	//	EditU(String),	// E file	Edit file unconditionally
-	Exec(String), // !cmd		Execute command
-	//	FName(String),	// f file	Set default filename to file
+	Append,        // (.)a		Append text to the buffer
+	Change,        // (.,.)c	Change line in buffer
 	CurLine,       // =		Print line number
+	Delete,        // (.,.)d	Delete lines
+	Edit(String),  // e file	Edit file
+	Exec(String),  // !cmd		Execute command
 	Help,          // H		Toggle error explanations
 	Insert,        // (.)i		Insert text before current line
 	Read,          // ($)r		Reads file to after the addressed line

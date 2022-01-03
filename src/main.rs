@@ -204,6 +204,7 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 			} else {
 				write_file(s, &s.file)?;
 			};
+			s.changed = false;
 		}
 		(_, Some(Command::Quit)) => {
 			if s.changed == true {

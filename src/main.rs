@@ -60,7 +60,7 @@ enum Mode {
 }
 
 fn read_file(f: &str) -> Result<State> {
-	let buf = fs::read_to_string(&f).map_err(|_| CommandError::new("Invalid path"))?;
+	let buf = fs::read_to_string(&f).map_err(|_| CommandError::new("invalid path"))?;
 	println!("{}", buf.as_bytes().len());
 	let total = buf.lines().count();
 	let last = if total > 0 { total - 1 } else { total };
@@ -74,7 +74,7 @@ fn read_file(f: &str) -> Result<State> {
 }
 
 fn write_file(s: &State, f: &str) -> Result<()> {
-	fs::write(f, s.buffer.as_str()).map_err(|_| CommandError::new("Invalid path"))?;
+	fs::write(f, s.buffer.as_str()).map_err(|_| CommandError::new("invalid path"))?;
 	Ok(())
 }
 
@@ -92,7 +92,7 @@ fn update_line(s: &mut State, l: Line) -> Result<usize> {
 	if newline < s.total {
 		Ok(newline)
 	} else {
-		Err(CommandError::new("Invalid address"))
+		Err(CommandError::new("invalid address"))
 	}
 }
 
@@ -108,7 +108,7 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 				s.buffer
 					.lines()
 					.nth(s.line)
-					.ok_or(CommandError::new("Invalid Address"))?
+					.ok_or(CommandError::new("invalid address"))?
 			);
 		}
 		(r, Some(Command::Change)) => {
@@ -201,7 +201,7 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 			process::exit(0);
 		}
 		_ => {
-			return Err(CommandError::new("Invalid command"));
+			return Err(CommandError::new("invalid command"));
 		}
 	}
 	Ok(())
@@ -225,7 +225,7 @@ fn main() {
 		match state.mode {
 			Mode::CommandMode => {
 				parse_command(&input)
-					.or(Err(CommandError::new("Invalid Command")))
+					.or(Err(CommandError::new("invalid command")))
 					.and_then(|(_, t)| handle_command(&mut state, t))
 					.unwrap_or_else(|e| {
 						println!("?");

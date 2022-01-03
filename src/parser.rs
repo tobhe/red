@@ -19,7 +19,8 @@ extern crate nom;
 use nom::{
 	branch::alt, character::complete::anychar, character::complete::char, character::complete::i32,
 	character::complete::newline, character::is_newline, combinator::opt, error::Error,
-	error::ErrorKind, sequence::terminated, sequence::tuple, Err, IResult, InputTakeAtPosition,
+	error::ErrorKind, sequence::preceded, sequence::terminated, sequence::tuple, Err, IResult,
+	InputTakeAtPosition,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -49,32 +50,28 @@ impl Default for Range {
  */
 #[derive(Debug)]
 pub enum Command {
-	Append,        // (.)a		Append text to the buffer
-	Change,        // (.,.)c	Change line in buffer
-	CurLine,       // =		Print line number
-	Delete,        // (.,.)d	Delete lines
-	Edit(String),  // e file	Edit file
-	Exec(String),  // !cmd		Execute command
-	Help,          // H		Toggle error explanations
-	Insert,        // (.)i		Insert text before current line
-	Read,          // ($)r		Reads file to after the addressed line
-	Number,        // (.,.)n	Print lines with index
-	Print,         // (.,.)p	Print lines
-	Prompt,        // P		Enable * prompt
-	Write(String), // w file	Write buffer to file
-	Quit,          // q		Quit
+	Append,                // (.)a		Append text to the buffer
+	Change,                // (.,.)c	Change line in buffer
+	CurLine,               // =		Print line number
+	Delete,                // (.,.)d	Delete lines
+	Edit(Option<String>),  // e file	Edit file
+	Exec(String),          // !cmd		Execute command
+	File(String),          // f file        Set default filename
+	Help,                  // H		Toggle error explanations
+	Insert,                // (.)i		Insert text before current line
+	Read,                  // ($)r		Reads file to after the addressed line
+	Number,                // (.,.)n	Print lines with index
+	Print,                 // (.,.)p	Print lines
+	Prompt,                // P		Enable * prompt
+	Write(Option<String>), // w file	Write buffer to file
+	Quit,                  // q		Quit
 }
 
 pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>)> {
 	let (i, (r, c)) = terminated(
 		tuple((
 			opt(parse_range),
-			opt(alt((
-				parse_command_char,
-				parse_edit,
-				parse_exec,
-				parse_write,
-			))),
+			opt(alt((parse_command_char, parse_file_command, parse_exec))),
 		)),
 		newline,
 	)(i)?;
@@ -101,16 +98,18 @@ fn parse_command_char(i: &str) -> IResult<&str, Command> {
 	Ok((i, cmd))
 }
 
-fn parse_edit(i: &str) -> IResult<&str, Command> {
-	let (i, _) = tuple((char('e'), char(' ')))(i)?;
-	let (i, s) = parse_path(i)?;
-	Ok((i, Command::Edit(s.to_string())))
-}
-
-fn parse_write(i: &str) -> IResult<&str, Command> {
-	let (i, _) = tuple((char('w'), char(' ')))(i)?;
-	let (i, s) = parse_path(i)?;
-	Ok((i, Command::Write(s.to_string())))
+fn parse_file_command(i: &str) -> IResult<&str, Command> {
+	let (i, (c, s)) = tuple((anychar, opt(preceded(char(' '), parse_path))))(i)?;
+	let cmd = match c {
+		'e' => Command::Edit(s.map(ToString::to_string)),
+		'f' => Command::File(
+			s.ok_or(Err::Error(Error::new("line", ErrorKind::Char)))?
+				.to_string(),
+		),
+		'w' => Command::Write(s.map(ToString::to_string)),
+		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
+	};
+	Ok((i, cmd))
 }
 
 fn parse_exec(i: &str) -> IResult<&str, Command> {

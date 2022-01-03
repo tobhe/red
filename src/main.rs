@@ -35,7 +35,7 @@ struct State {
 	buffer: String,
 	prompt: bool,
 	verbose: bool,
-	_file: String,
+	file: String,
 }
 
 impl Default for State {
@@ -48,7 +48,7 @@ impl Default for State {
 			buffer: String::from(""),
 			prompt: false,
 			verbose: false,
-			_file: String::from(""),
+			file: String::from(""),
 		}
 	}
 }
@@ -67,7 +67,7 @@ fn read_file(f: &str) -> Result<State> {
 	Ok(State {
 		line: last,
 		total: total,
-		_file: String::from(f),
+		file: String::from(f),
 		buffer: buf,
 		..State::default()
 	})
@@ -137,7 +137,12 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 				s.changed = false;
 				return Err(CommandError::new("warning: file modified"));
 			}
-			*s = read_file(&f)?;
+			if let Some(f) = f {
+				*s = read_file(&f)?;
+				s.file = f;
+			} else {
+				*s = read_file(&s.file)?;
+			}
 		}
 		(_, Some(Command::Exec(c))) => {
 			process::Command::new("sh")
@@ -146,6 +151,9 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 				.status()
 				.map_err(|_| CommandError::new("Command failed"))?;
 			println!("!");
+		}
+		(_, Some(Command::File(f))) => {
+			s.file = f;
 		}
 		(l, Some(Command::Append)) => {
 			if l.from != l.to {
@@ -191,7 +199,11 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 			s.verbose = !s.verbose;
 		}
 		(_, Some(Command::Write(f))) => {
-			write_file(s, &f)?;
+			if let Some(f) = f {
+				write_file(s, &f)?;
+			} else {
+				write_file(s, &s.file)?;
+			};
 		}
 		(_, Some(Command::Quit)) => {
 			if s.changed == true {

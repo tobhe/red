@@ -17,20 +17,9 @@
 extern crate nom;
 
 use nom::{
-	Err,
-	error::Error,
-	error::ErrorKind,
-	IResult,
-	branch::alt,
-	combinator::opt,
-	sequence::tuple,
-	character::is_newline,
-	character::complete::anychar,
-	character::complete::char,
-	character::complete::i32,
-	character::complete::newline,
-	sequence::terminated,
-	InputTakeAtPosition
+	branch::alt, character::complete::anychar, character::complete::char, character::complete::i32,
+	character::complete::newline, character::is_newline, combinator::opt, error::Error,
+	error::ErrorKind, sequence::terminated, sequence::tuple, Err, IResult, InputTakeAtPosition,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -46,7 +35,12 @@ pub struct Range {
 }
 
 impl Default for Range {
-    fn default() -> Self {Range {from: Line::Rel(0), to: Line::Rel(0)}}
+	fn default() -> Self {
+		Range {
+			from: Line::Rel(0),
+			to: Line::Rel(0),
+		}
+	}
 }
 
 /*
@@ -55,33 +49,36 @@ impl Default for Range {
  */
 #[derive(Debug)]
 pub enum Command {
-	Append,		// (.)a		Append text to the buffer
-	Change,		// (.,.)c	Change line in buffer
-	Delete,		// (.,.)d	Delete lines
-	Edit(String),	// e file	Edit file
-//	EditU(String),	// E file	Edit file unconditionally
-	Exec(String),	// !cmd		Execute command
-//	FName(String),	// f file	Set default filename to file
-	CurLine,	// =		Print line number
-	Insert,		// (.)i		Insert text before current line
-	Read,		// ($)r		Reads file to after the addressed line
-	Number,		// (.,.)n	Print lines with index
-	Print,		// (.,.)p	Print lines
-	Prompt,		// P		Enable * prompt
-	Write(String),	// w file	Write buffer to file
-	Quit		// q		Quit
+	Append,       // (.)a		Append text to the buffer
+	Change,       // (.,.)c	Change line in buffer
+	Delete,       // (.,.)d	Delete lines
+	Edit(String), // e file	Edit file
+	//	EditU(String),	// E file	Edit file unconditionally
+	Exec(String), // !cmd		Execute command
+	//	FName(String),	// f file	Set default filename to file
+	CurLine,       // =		Print line number
+	Insert,        // (.)i		Insert text before current line
+	Read,          // ($)r		Reads file to after the addressed line
+	Number,        // (.,.)n	Print lines with index
+	Print,         // (.,.)p	Print lines
+	Prompt,        // P		Enable * prompt
+	Write(String), // w file	Write buffer to file
+	Quit,          // q		Quit
 }
 
 pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>)> {
-	let (i, (r, c)) = terminated(tuple((
-	    opt(parse_range),
-	    opt(alt((
-		parse_command_char,
-		parse_edit,
-		parse_exec,
-		parse_write,
-	    ))),
-	)), newline)(i)?;
+	let (i, (r, c)) = terminated(
+		tuple((
+			opt(parse_range),
+			opt(alt((
+				parse_command_char,
+				parse_edit,
+				parse_exec,
+				parse_write,
+			))),
+		)),
+		newline,
+	)(i)?;
 	Ok((i, (r.unwrap_or_default(), c)))
 }
 
@@ -99,7 +96,7 @@ fn parse_command_char(i: &str) -> IResult<&str, Command> {
 		'q' => Command::Quit,
 		'r' => Command::Read,
 		'=' => Command::CurLine,
-		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char)))
+		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
 	};
 	Ok((i, cmd))
 }
@@ -134,17 +131,18 @@ pub fn parse_terminator(i: &str) -> IResult<&str, Command> {
 
 // Helpers
 fn parse_range(i: &str) -> IResult<&str, Range> {
-	alt((
-		parse_range_special,
-		parse_range_tuple,
-		parse_range_simple,
-	))(i)
+	alt((parse_range_special, parse_range_tuple, parse_range_simple))(i)
 }
 
 fn parse_range_special(i: &str) -> IResult<&str, Range> {
 	match alt((char(','), char('%')))(i) {
-		Ok((i, _)) => Ok((i, Range{from: Line::Abs(0),
-		    to: Line::Abs(-1)})),
+		Ok((i, _)) => Ok((
+			i,
+			Range {
+				from: Line::Abs(0),
+				to: Line::Abs(-1),
+			},
+		)),
 		Err(error) => Err(error),
 	}
 }
@@ -153,13 +151,13 @@ fn parse_range_tuple(i: &str) -> IResult<&str, Range> {
 	let (i, f) = parse_line(i)?;
 	let (i, _) = char(',')(i)?;
 	let (i, t) = parse_line(i)?;
-	let r = Range{from: f, to: t};
+	let r = Range { from: f, to: t };
 	Ok((i, r))
 }
 
 fn parse_range_simple(i: &str) -> IResult<&str, Range> {
 	let (i, f) = parse_line(i)?;
-	let r = Range{from: f, to: f};
+	let r = Range { from: f, to: f };
 	Ok((i, r))
 }
 
@@ -179,7 +177,7 @@ fn parse_line_special(i: &str) -> IResult<&str, Line> {
 		Ok((i, '-')) => Ok((i, Line::Rel(-1))),
 		Err(e) => Err(e),
 		// This should not happen but silences the compiler
-		_ => Err(Err::Error(Error::new("line", ErrorKind::Fail)))
+		_ => Err(Err::Error(Error::new("line", ErrorKind::Fail))),
 	}
 }
 
@@ -192,8 +190,7 @@ fn parse_line_regular(i: &str) -> IResult<&str, Line> {
 			if o > 0 {
 				Ok((i, Line::Abs(o - 1)))
 			} else {
-				return Err(Err::Error(Error::new("line",
-				    ErrorKind::Fail)))
+				return Err(Err::Error(Error::new("line", ErrorKind::Fail)));
 			}
 		}
 	}

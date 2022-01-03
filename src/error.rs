@@ -25,13 +25,15 @@ pub struct CommandError {
 
 impl CommandError {
 	pub fn new(msg: &str) -> CommandError {
-		CommandError{details: msg.to_string()}
+		CommandError {
+			details: msg.to_string(),
+		}
 	}
 }
 
 impl fmt::Display for CommandError {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f,"{}",self.details)
+		write!(f, "{}", self.details)
 	}
 }
 

@@ -55,20 +55,20 @@ impl Default for Range {
  */
 #[derive(Debug)]
 pub enum Command {
-	Append,                // (.)a		Append text to the buffer
-	Change,                // (.,.)c	Change line in buffer
-	CurLine,               // =		Print line number
-	Delete,                // (.,.)d	Delete lines
-	Edit(Option<String>),  // e file	Edit file
-	Exec(String),          // !cmd		Execute command
-	File(String),          // f file        Set default filename
-	Help,                  // H		Toggle error explanations
-	Insert,                // (.)i		Insert text before current line
-	Prompt,                // P		Enable * prompt
-	Read,                  // ($)r		Reads file to after the addressed line
-	Search(String),        // /re/		Next line containing the regex
-	Write(Option<String>), // w file	Write buffer to file
-	Quit,                  // q		Quit
+	Append,                 // (.)a		Append text to the buffer
+	Change,                 // (.,.)c	Change line in buffer
+	CurLine,                // =		Print line number
+	Delete,                 // (.,.)d	Delete lines
+	Edit(Option<String>),   // e file	Edit file
+	Exec(String),           // !cmd		Execute command
+	File(String),           // f file        Set default filename
+	Help,                   // H		Toggle error explanations
+	Insert,                 // (.)i		Insert text before current line
+	Prompt,                 // P		Enable * prompt
+	Read,                   // ($)r		Reads file to after the addressed line
+	Search(Option<String>), // /re/		Next line containing the regex
+	Write(Option<String>),  // w file	Write buffer to file
+	Quit,                   // q		Quit
 }
 
 bitflags! {
@@ -146,9 +146,9 @@ fn parse_file_command(i: &str) -> IResult<&str, Command> {
 }
 
 fn parse_search(i: &str) -> IResult<&str, Command> {
-	let (i, s) = preceded(char('/'), many1(none_of("/\n")))(i)?;
+	let (i, s) = preceded(char('/'), opt(many1(none_of("/\n"))))(i)?;
 	let (i, _) = opt(char('/'))(i)?;
-	Ok((i, Command::Search(s.into_iter().collect())))
+	Ok((i, Command::Search(s.map(|re| re.into_iter().collect()))))
 }
 
 fn parse_exec(i: &str) -> IResult<&str, Command> {

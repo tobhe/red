@@ -38,6 +38,8 @@ struct State {
 	prompt: bool,
 	verbose: bool,
 	file: String,
+	last_match: Option<usize>,
+	last_regex: Option<regex::Regex>,
 }
 
 impl Default for State {
@@ -51,6 +53,8 @@ impl Default for State {
 			prompt: false,
 			verbose: false,
 			file: String::from(""),
+			last_match: None,
+			last_regex: None,
 		}
 	}
 }
@@ -191,16 +195,32 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>, CommandFlags)) -> R
 			s.prompt = !s.prompt;
 		}
 		Some(Command::Search(re)) => {
-			let re = Regex::new(&re).map_err(|_| CommandError::new("invalid regex"))?;
-			let (i, _) = s
-				.buffer
-				.lines()
-				.enumerate()
-				.find(|(_, l)| re.is_match(l))
-				.ok_or(CommandError::new("no match"))?;
+			if let Some(re) = re {
+				let regex = Regex::new(&re).map_err(|_| CommandError::new("invalid regex"))?;
+				let head = s.buffer.lines().enumerate().take(s.line + 1);
+				let tail = s.buffer.lines().enumerate().skip(s.line + 1);
+				let (i, _) = tail
+					.chain(head)
+					.find(|(_, l)| regex.is_match(l))
+					.ok_or(CommandError::new("no match"))?;
+				s.last_match = Some(i);
+				s.last_regex = Some(regex);
+				from = i;
+				to = i;
+			} else {
+				let i = s.last_match.ok_or(CommandError::new("no match"))?;
+				let regex = s.last_regex.as_ref().ok_or(CommandError::new("no match"))?;
+				let head = s.buffer.lines().enumerate().take(i + 1);
+				let tail = s.buffer.lines().enumerate().skip(i + 1);
+				let (i, _) = tail
+					.chain(head)
+					.find(|(_, l)| regex.is_match(l))
+					.ok_or(CommandError::new("no match"))?;
+				s.last_match = Some(i);
+				from = i;
+				to = i;
+			};
 			flags = flags | CommandFlags::PRINT;
-			from = i;
-			to = i;
 		}
 		Some(Command::Write(f)) => {
 			if let Some(f) = f {

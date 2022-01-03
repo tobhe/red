@@ -25,6 +25,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::process;
 
+use regex::Regex;
+
 type Result<T> = std::result::Result<T, CommandError>;
 
 struct State {
@@ -111,8 +113,16 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 					.ok_or(CommandError::new("invalid address"))?
 			);
 		}
-		(_, Some(Command::CurLine)) => {
-			println!("{}", s.line + 1);
+		(l, Some(com @ Command::Append)) | (l, Some(com @ Command::Insert)) => {
+			if l.from != l.to {
+				return Err(CommandError::new("Expected single line"));
+			}
+			let line = match com {
+				Command::Append => update_line(s, l.from)? + 1,
+				Command::Insert => update_line(s, l.from)?,
+				_ => unreachable!(),
+			};
+			s.mode = Mode::InsertMode(line, String::new());
 		}
 		(r, Some(com @ Command::Change)) | (r, Some(com @ Command::Delete)) => {
 			let from = update_line(s, r.from)?;
@@ -126,6 +136,9 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 				Command::Delete => s.changed = true,
 				_ => unreachable!(),
 			}
+		}
+		(_, Some(Command::CurLine)) => {
+			println!("{}", s.line + 1);
 		}
 		(_, Some(Command::Edit(f))) => {
 			if s.changed == true {
@@ -150,16 +163,8 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 		(_, Some(Command::File(f))) => {
 			s.file = f;
 		}
-		(l, Some(com @ Command::Append)) | (l, Some(com @ Command::Insert)) => {
-			if l.from != l.to {
-				return Err(CommandError::new("Expected single line"));
-			}
-			let line = match com {
-				Command::Append => update_line(s, l.from)? + 1,
-				Command::Insert => update_line(s, l.from)?,
-				_ => unreachable!(),
-			};
-			s.mode = Mode::InsertMode(line, String::new());
+		(_, Some(Command::Help)) => {
+			s.verbose = !s.verbose;
 		}
 		(r, Some(com @ Command::Number)) | (r, Some(com @ Command::Print)) => {
 			let from = update_line(s, r.from)?;
@@ -179,8 +184,24 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 		(_, Some(Command::Prompt)) => {
 			s.prompt = !s.prompt;
 		}
-		(_, Some(Command::Help)) => {
-			s.verbose = !s.verbose;
+		(_, Some(Command::Search(re))) => {
+			let re = Regex::new(&re).map_err(|_| CommandError::new("invalid regex"))?;
+			let (i, _) = s
+				.buffer
+				.lines()
+				.enumerate()
+				.find(|(_, l)| re.is_match(l))
+				.ok_or(CommandError::new("no match"))?;
+			return handle_command(
+				s,
+				(
+					Range {
+						from: Line::Abs(i32::try_from(i)?),
+						to: Line::Abs(i32::try_from(i)?),
+					},
+					Some(Command::Print),
+				),
+			);
 		}
 		(_, Some(Command::Write(f))) => {
 			if let Some(f) = f {

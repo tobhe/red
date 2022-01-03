@@ -17,10 +17,14 @@
 extern crate nom;
 
 use nom::{
-	branch::alt, character::complete::anychar, character::complete::char, character::complete::i32,
-	character::complete::newline, character::is_newline, combinator::opt, error::Error,
-	error::ErrorKind, sequence::preceded, sequence::terminated, sequence::tuple, Err, IResult,
-	InputTakeAtPosition,
+	branch::alt,
+	character::complete::{anychar, char, i32, newline, none_of},
+	character::is_newline,
+	combinator::opt,
+	error::{Error, ErrorKind},
+	multi::many1,
+	sequence::{preceded, terminated, tuple},
+	Err, IResult, InputTakeAtPosition,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -59,10 +63,11 @@ pub enum Command {
 	File(String),          // f file        Set default filename
 	Help,                  // H		Toggle error explanations
 	Insert,                // (.)i		Insert text before current line
-	Read,                  // ($)r		Reads file to after the addressed line
 	Number,                // (.,.)n	Print lines with index
 	Print,                 // (.,.)p	Print lines
 	Prompt,                // P		Enable * prompt
+	Read,                  // ($)r		Reads file to after the addressed line
+	Search(String),        // /re/		Next line containing the regex
 	Write(Option<String>), // w file	Write buffer to file
 	Quit,                  // q		Quit
 }
@@ -71,7 +76,12 @@ pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>)> {
 	let (i, (r, c)) = terminated(
 		tuple((
 			opt(parse_range),
-			opt(alt((parse_command_char, parse_file_command, parse_exec))),
+			opt(alt((
+				parse_command_char,
+				parse_file_command,
+				parse_exec,
+				parse_search,
+			))),
 		)),
 		newline,
 	)(i)?;
@@ -112,9 +122,14 @@ fn parse_file_command(i: &str) -> IResult<&str, Command> {
 	Ok((i, cmd))
 }
 
+fn parse_search(i: &str) -> IResult<&str, Command> {
+	let (i, s) = preceded(char('/'), many1(none_of("/\n")))(i)?;
+	let (i, _) = opt(char('/'))(i)?;
+	Ok((i, Command::Search(s.into_iter().collect())))
+}
+
 fn parse_exec(i: &str) -> IResult<&str, Command> {
-	let (i, _) = char('!')(i)?;
-	let (i, s) = parse_path(i)?;
+	let (i, s) = preceded(char('!'), parse_path)(i)?;
 	Ok((i, Command::Exec(s.to_string())))
 }
 

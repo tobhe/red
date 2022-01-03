@@ -28,22 +28,26 @@ use std::process;
 type Result<T> = std::result::Result<T, CommandError>;
 
 struct State {
+	changed: bool,
 	line: usize,
 	total: usize,
 	mode: Mode,
 	buffer: String,
 	prompt: bool,
+	verbose: bool,
 	_file: String,
 }
 
 impl Default for State {
 	fn default() -> Self {
 		State {
+			changed: false,
 			line: 0,
 			total: 1,
 			mode: Mode::CommandMode,
 			buffer: String::from(""),
 			prompt: false,
+			verbose: false,
 			_file: String::from(""),
 		}
 	}
@@ -63,10 +67,9 @@ fn read_file(f: &str) -> Result<State> {
 	Ok(State {
 		line: last,
 		total: total,
-		mode: Mode::CommandMode,
-		buffer: buf,
-		prompt: false,
 		_file: String::from(f),
+		buffer: buf,
+		..State::default()
 	})
 }
 
@@ -127,8 +130,13 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 			let tail = s.buffer.lines().skip(to + 1);
 			s.buffer = head.chain(tail).fold(String::new(), |e, l| e + l + "\n");
 			s.total = s.buffer.lines().count();
+			s.changed = true;
 		}
 		(_, Some(Command::Edit(f))) => {
+			if s.changed == true {
+				s.changed = false;
+				return Err(CommandError::new("warning: file modified"));
+			}
 			*s = read_file(&f)?;
 		}
 		(_, Some(Command::Exec(c))) => {
@@ -162,7 +170,7 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 				.skip(from)
 				.take(to - from + 1)
 				.for_each(|(i, s)| {
-					println!("{:<4} {}", i + 1, s);
+					println!("{}\t{}", i + 1, s);
 				});
 		}
 		(r, Some(Command::Print)) => {
@@ -179,10 +187,17 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 		(_, Some(Command::Prompt)) => {
 			s.prompt = !s.prompt;
 		}
+		(_, Some(Command::Help)) => {
+			s.verbose = !s.verbose;
+		}
 		(_, Some(Command::Write(f))) => {
 			write_file(s, &f)?;
 		}
 		(_, Some(Command::Quit)) => {
+			if s.changed == true {
+				s.changed = false;
+				return Err(CommandError::new("warning: file modified"));
+			}
 			process::exit(0);
 		}
 		_ => {
@@ -213,7 +228,10 @@ fn main() {
 					.or(Err(CommandError::new("Invalid Command")))
 					.and_then(|(_, t)| handle_command(&mut state, t))
 					.unwrap_or_else(|e| {
-						println!("? ({})", e);
+						println!("?");
+						if state.verbose == true {
+							println!("{}", e);
+						}
 					});
 			}
 			Mode::InsertMode(l, ref mut b) => {
@@ -227,6 +245,7 @@ fn main() {
 						.fold(String::new(), |s, l| s + l + "\n");
 					state.total = state.buffer.lines().count();
 					state.mode = Mode::CommandMode;
+					state.changed = true;
 				} else {
 					b.push_str(&input);
 				}

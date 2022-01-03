@@ -57,6 +57,7 @@ pub enum Command {
 	Exec(String), // !cmd		Execute command
 	//	FName(String),	// f file	Set default filename to file
 	CurLine,       // =		Print line number
+	Help,          // H		Toggle error explanations
 	Insert,        // (.)i		Insert text before current line
 	Read,          // ($)r		Reads file to after the addressed line
 	Number,        // (.,.)n	Print lines with index
@@ -89,6 +90,7 @@ fn parse_command_char(i: &str) -> IResult<&str, Command> {
 		'a' => Command::Append,
 		'c' => Command::Change,
 		'd' => Command::Delete,
+		'H' => Command::Help,
 		'i' => Command::Insert,
 		'n' => Command::Number,
 		'P' => Command::Prompt,

@@ -58,7 +58,7 @@ impl Default for State {
 #[derive(PartialEq)]
 enum Mode {
 	CommandMode,
-	InsertMode(usize, String),
+	InsertMode(usize, String, CommandFlags),
 }
 
 fn read_file(f: &str) -> Result<State> {
@@ -141,7 +141,8 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>, CommandFlags)) -> R
 				Command::Insert => to,
 				_ => unreachable!(),
 			};
-			s.mode = Mode::InsertMode(line, String::new());
+			s.mode = Mode::InsertMode(line, String::new(), flags);
+			return Ok(());
 		}
 		Some(com @ Command::Change) | Some(com @ Command::Delete) => {
 			let head = s.buffer.lines().take(from);
@@ -149,7 +150,10 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>, CommandFlags)) -> R
 			s.buffer = head.chain(tail).fold(String::new(), |e, l| e + l + "\n");
 			s.total = s.buffer.lines().count();
 			match com {
-				Command::Change => s.mode = Mode::InsertMode(from, String::new()),
+				Command::Change => {
+					s.mode = Mode::InsertMode(from, String::new(), flags);
+					return Ok(());
+				}
 				Command::Delete => s.changed = true,
 				_ => unreachable!(),
 			}
@@ -250,7 +254,7 @@ fn main() {
 						}
 					});
 			}
-			Mode::InsertMode(l, ref mut b) => {
+			Mode::InsertMode(l, ref mut b, flags) => {
 				if parse_terminator(&input).is_ok() {
 					// Write to buf
 					let head = state.buffer.lines().take(l);
@@ -262,6 +266,9 @@ fn main() {
 					state.total = state.buffer.lines().count();
 					state.mode = Mode::CommandMode;
 					state.changed = true;
+					if !flags.is_empty() {
+						print_range(&state, l, l, flags);
+					}
 				} else {
 					b.push_str(&input);
 				}

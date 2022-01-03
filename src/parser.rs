@@ -134,16 +134,19 @@ fn parse_range(i: &str) -> IResult<&str, Range> {
 }
 
 fn parse_range_special(i: &str) -> IResult<&str, Range> {
-	match alt((char(','), char('%')))(i) {
-		Ok((i, _)) => Ok((
-			i,
-			Range {
-				from: Line::Abs(0),
-				to: Line::Abs(-1),
-			},
-		)),
-		Err(error) => Err(error),
-	}
+	let (i, c) = anychar(i)?;
+	let range = match c {
+		'%' | ',' => Range {
+			from: Line::Abs(0),
+			to: Line::Abs(-1),
+		},
+		';' => Range {
+			from: Line::Rel(0),
+			to: Line::Abs(-1),
+		},
+		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
+	};
+	Ok((i, range))
 }
 
 fn parse_range_tuple(i: &str) -> IResult<&str, Range> {

@@ -136,6 +136,13 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 			    .map_err(|_| CommandError::new("Command failed"))?;
 			println!("!");
 		},
+		(l, Some(Command::Append)) => {
+			if l.from != l.to {
+				return Err(CommandError::new("Expected single line"));
+			}
+			let line = update_line(s, l.from)?;
+			s.mode = Mode::InsertMode(line + 1, String::new());
+		},
 		(l, Some(Command::Insert)) => {
 			if l.from != l.to {
 				return Err(CommandError::new("Expected single line"));

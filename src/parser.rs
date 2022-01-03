@@ -16,13 +16,14 @@
 
 extern crate nom;
 
+use bitflags::bitflags;
 use nom::{
 	branch::alt,
 	character::complete::{anychar, char, i32, newline, none_of},
 	character::is_newline,
 	combinator::opt,
 	error::{Error, ErrorKind},
-	multi::many1,
+	multi::{many0, many1},
 	sequence::{preceded, terminated, tuple},
 	Err, IResult, InputTakeAtPosition,
 };
@@ -63,8 +64,6 @@ pub enum Command {
 	File(String),          // f file        Set default filename
 	Help,                  // H		Toggle error explanations
 	Insert,                // (.)i		Insert text before current line
-	Number,                // (.,.)n	Print lines with index
-	Print,                 // (.,.)p	Print lines
 	Prompt,                // P		Enable * prompt
 	Read,                  // ($)r		Reads file to after the addressed line
 	Search(String),        // /re/		Next line containing the regex
@@ -72,8 +71,16 @@ pub enum Command {
 	Quit,                  // q		Quit
 }
 
-pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>)> {
-	let (i, (r, c)) = terminated(
+bitflags! {
+	pub struct CommandFlags: u8 {
+		const NONE = 0x00;
+		const PRINT = 0x01;	// (.,.)n	Print lines with index
+		const NUMBER = 0x02;	// (.,.)p	Print lines
+	}
+}
+
+pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>, CommandFlags)> {
+	let (i, (r, c, f)) = terminated(
 		tuple((
 			opt(parse_range),
 			opt(alt((
@@ -82,10 +89,18 @@ pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>)> {
 				parse_exec,
 				parse_search,
 			))),
+			many0(parse_flag),
 		)),
 		newline,
 	)(i)?;
-	Ok((i, (r.unwrap_or_default(), c)))
+	Ok((
+		i,
+		(
+			r.unwrap_or_default(),
+			c,
+			f.into_iter().fold(CommandFlags::NONE, |fs, flag| fs | flag),
+		),
+	))
 }
 
 // Commands
@@ -97,15 +112,23 @@ fn parse_command_char(i: &str) -> IResult<&str, Command> {
 		'd' => Command::Delete,
 		'H' => Command::Help,
 		'i' => Command::Insert,
-		'n' => Command::Number,
 		'P' => Command::Prompt,
-		'p' => Command::Print,
 		'q' => Command::Quit,
 		'r' => Command::Read,
 		'=' => Command::CurLine,
 		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
 	};
 	Ok((i, cmd))
+}
+
+fn parse_flag(i: &str) -> IResult<&str, CommandFlags> {
+	let (i, c) = anychar(i)?;
+	let f = match c {
+		'n' => CommandFlags::NUMBER,
+		'p' => CommandFlags::PRINT,
+		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
+	};
+	Ok((i, f))
 }
 
 fn parse_file_command(i: &str) -> IResult<&str, Command> {

@@ -18,7 +18,7 @@ mod error;
 mod parser;
 
 use crate::error::CommandError;
-use crate::parser::{parse_command, parse_terminator, Command, Line, Range};
+use crate::parser::{parse_command, parse_terminator, Command, CommandFlags, Line, Range};
 use std::convert::TryFrom;
 use std::env;
 use std::fs;
@@ -98,35 +98,52 @@ fn update_line(s: &mut State, l: Line) -> Result<usize> {
 	}
 }
 
-fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
-	match c {
-		(l, None) => {
-			if l.from != l.to {
-				return Err(CommandError::new("Expected single line"));
+fn print_range(s: &State, from: usize, to: usize, flags: CommandFlags) {
+	let fun = if flags.contains(CommandFlags::NUMBER) {
+		|(i, s)| println!("{}\t{}", i + 1, s)
+	} else {
+		|(_, s)| println!("{}", s)
+	};
+	s.buffer
+		.lines()
+		.enumerate()
+		.skip(from)
+		.take(to - from + 1)
+		.for_each(fun);
+}
+
+fn handle_command(s: &mut State, c: (Range, Option<Command>, CommandFlags)) -> Result<()> {
+	let (range, command, mut flags) = c;
+	let mut from = update_line(s, range.from)?;
+	let mut to = update_line(s, range.to)?;
+	match command {
+		None => {
+			if flags.is_empty() {
+				if from != to {
+					return Err(CommandError::new("Expected single line"));
+				}
+				s.line = to;
+				println!(
+					"{}",
+					s.buffer
+						.lines()
+						.nth(s.line)
+						.ok_or(CommandError::new("invalid address"))?
+				);
 			}
-			s.line = update_line(s, l.from)?;
-			println!(
-				"{}",
-				s.buffer
-					.lines()
-					.nth(s.line)
-					.ok_or(CommandError::new("invalid address"))?
-			);
 		}
-		(l, Some(com @ Command::Append)) | (l, Some(com @ Command::Insert)) => {
-			if l.from != l.to {
+		Some(com @ Command::Append) | Some(com @ Command::Insert) => {
+			if from != to {
 				return Err(CommandError::new("Expected single line"));
 			}
 			let line = match com {
-				Command::Append => update_line(s, l.from)? + 1,
-				Command::Insert => update_line(s, l.from)?,
+				Command::Append => to + 1,
+				Command::Insert => to,
 				_ => unreachable!(),
 			};
 			s.mode = Mode::InsertMode(line, String::new());
 		}
-		(r, Some(com @ Command::Change)) | (r, Some(com @ Command::Delete)) => {
-			let from = update_line(s, r.from)?;
-			let to = update_line(s, r.to)?;
+		Some(com @ Command::Change) | Some(com @ Command::Delete) => {
 			let head = s.buffer.lines().take(from);
 			let tail = s.buffer.lines().skip(to + 1);
 			s.buffer = head.chain(tail).fold(String::new(), |e, l| e + l + "\n");
@@ -137,10 +154,10 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 				_ => unreachable!(),
 			}
 		}
-		(_, Some(Command::CurLine)) => {
+		Some(Command::CurLine) => {
 			println!("{}", s.line + 1);
 		}
-		(_, Some(Command::Edit(f))) => {
+		Some(Command::Edit(f)) => {
 			if s.changed == true {
 				s.changed = false;
 				return Err(CommandError::new("warning: file modified"));
@@ -152,7 +169,7 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 				*s = read_file(&s.file)?;
 			}
 		}
-		(_, Some(Command::Exec(c))) => {
+		Some(Command::Exec(c)) => {
 			process::Command::new("sh")
 				.arg("-c")
 				.arg(c)
@@ -160,31 +177,16 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 				.map_err(|_| CommandError::new("Command failed"))?;
 			println!("!");
 		}
-		(_, Some(Command::File(f))) => {
+		Some(Command::File(f)) => {
 			s.file = f;
 		}
-		(_, Some(Command::Help)) => {
+		Some(Command::Help) => {
 			s.verbose = !s.verbose;
 		}
-		(r, Some(com @ Command::Number)) | (r, Some(com @ Command::Print)) => {
-			let from = update_line(s, r.from)?;
-			let to = update_line(s, r.to)?;
-			let fun = match com {
-				Command::Number => |(i, s)| println!("{}\t{}", i + 1, s),
-				Command::Print => |(_, s)| println!("{}", s),
-				_ => unreachable!(),
-			};
-			s.buffer
-				.lines()
-				.enumerate()
-				.skip(from)
-				.take(to - from + 1)
-				.for_each(fun);
-		}
-		(_, Some(Command::Prompt)) => {
+		Some(Command::Prompt) => {
 			s.prompt = !s.prompt;
 		}
-		(_, Some(Command::Search(re))) => {
+		Some(Command::Search(re)) => {
 			let re = Regex::new(&re).map_err(|_| CommandError::new("invalid regex"))?;
 			let (i, _) = s
 				.buffer
@@ -192,18 +194,11 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 				.enumerate()
 				.find(|(_, l)| re.is_match(l))
 				.ok_or(CommandError::new("no match"))?;
-			return handle_command(
-				s,
-				(
-					Range {
-						from: Line::Abs(i32::try_from(i)?),
-						to: Line::Abs(i32::try_from(i)?),
-					},
-					Some(Command::Print),
-				),
-			);
+			flags = flags | CommandFlags::PRINT;
+			from = i;
+			to = i;
 		}
-		(_, Some(Command::Write(f))) => {
+		Some(Command::Write(f)) => {
 			if let Some(f) = f {
 				write_file(s, &f)?;
 			} else {
@@ -211,7 +206,7 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 			};
 			s.changed = false;
 		}
-		(_, Some(Command::Quit)) => {
+		Some(Command::Quit) => {
 			if s.changed == true {
 				s.changed = false;
 				return Err(CommandError::new("warning: file modified"));
@@ -221,6 +216,9 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>)) -> Result<()> {
 		_ => {
 			return Err(CommandError::new("invalid command"));
 		}
+	}
+	if !flags.is_empty() {
+		print_range(s, from, to, flags);
 	}
 	Ok(())
 }

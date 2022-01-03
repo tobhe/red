@@ -40,7 +40,7 @@ impl Default for State {
 	fn default() -> Self {
 		State {
 			line: 0,
-			total: 0,
+			total: 1,
 			mode: Mode::CommandMode,
 			buffer: String::from(""),
 			prompt: false,

@@ -172,15 +172,15 @@ fn parse_line(i: &str) -> IResult<&str, Line> {
 }
 
 fn parse_line_special(i: &str) -> IResult<&str, Line> {
-	match alt((char('.'), char('$'), char('+'), char('-')))(i) {
-		Ok((i, '.')) => Ok((i, Line::Rel(0))),
-		Ok((i, '$')) => Ok((i, Line::Abs(-1))),
-		Ok((i, '+')) => Ok((i, Line::Rel(1))),
-		Ok((i, '-')) => Ok((i, Line::Rel(-1))),
-		Err(e) => Err(e),
-		// This should not happen but silences the compiler
-		_ => Err(Err::Error(Error::new("line", ErrorKind::Fail))),
-	}
+	let (i, c) = anychar(i)?;
+	let line = match c {
+		'.' => Line::Rel(0),
+		'$' => Line::Abs(-1),
+		'+' => Line::Rel(1),
+		'-' => Line::Rel(-1),
+		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
+	};
+	Ok((i, line))
 }
 
 fn parse_line_regular(i: &str) -> IResult<&str, Line> {

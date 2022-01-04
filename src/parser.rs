@@ -28,25 +28,15 @@ use nom::{
 	Err, IResult, InputTakeAtPosition,
 };
 
+pub enum Address {
+	Range(Line, Line),     // (.,.)		Address range
+	Regex(Option<String>), // /re/		Next line containing the regex
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Line {
 	Rel(i32),
 	Abs(i32),
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Range {
-	pub from: Line,
-	pub to: Line,
-}
-
-impl Default for Range {
-	fn default() -> Self {
-		Range {
-			from: Line::Rel(0),
-			to: Line::Rel(0),
-		}
-	}
 }
 
 /*
@@ -55,20 +45,19 @@ impl Default for Range {
  */
 #[derive(Debug)]
 pub enum Command {
-	Append,                 // (.)a		Append text to the buffer
-	Change,                 // (.,.)c	Change line in buffer
-	CurLine,                // =		Print line number
-	Delete,                 // (.,.)d	Delete lines
-	Edit(Option<String>),   // e file	Edit file
-	Exec(String),           // !cmd		Execute command
-	File(String),           // f file        Set default filename
-	Help,                   // H		Toggle error explanations
-	Insert,                 // (.)i		Insert text before current line
-	Prompt,                 // P		Enable * prompt
-	Read,                   // ($)r		Reads file to after the addressed line
-	Search(Option<String>), // /re/		Next line containing the regex
-	Write(Option<String>),  // w file	Write buffer to file
-	Quit,                   // q		Quit
+	Append,                // (.)a		Append text to the buffer
+	Change,                // (.,.)c	Change line in buffer
+	CurLine,               // =		Print line number
+	Delete,                // (.,.)d	Delete lines
+	Edit(Option<String>),  // e file	Edit file
+	Exec(String),          // !cmd		Execute command
+	File(String),          // f file        Set default filename
+	Help,                  // H		Toggle error explanations
+	Insert,                // (.)i		Insert text before current line
+	Prompt,                // P		Enable * prompt
+	Read,                  // ($)r		Reads file to after the addressed line
+	Write(Option<String>), // w file	Write buffer to file
+	Quit,                  // q		Quit
 }
 
 bitflags! {
@@ -79,16 +68,11 @@ bitflags! {
 	}
 }
 
-pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>, CommandFlags)> {
+pub fn parse_command(i: &str) -> IResult<&str, (Option<Address>, Option<Command>, CommandFlags)> {
 	let (i, (r, c, f)) = terminated(
 		tuple((
-			opt(parse_range),
-			opt(alt((
-				parse_command_char,
-				parse_file_command,
-				parse_exec,
-				parse_search,
-			))),
+			opt(parse_address),
+			opt(alt((parse_command_char, parse_file_command, parse_exec))),
 			many0(parse_flag),
 		)),
 		newline,
@@ -96,7 +80,7 @@ pub fn parse_command(i: &str) -> IResult<&str, (Range, Option<Command>, CommandF
 	Ok((
 		i,
 		(
-			r.unwrap_or_default(),
+			r,
 			c,
 			f.into_iter().fold(CommandFlags::NONE, |fs, flag| fs | flag),
 		),
@@ -145,12 +129,6 @@ fn parse_file_command(i: &str) -> IResult<&str, Command> {
 	Ok((i, cmd))
 }
 
-fn parse_search(i: &str) -> IResult<&str, Command> {
-	let (i, s) = preceded(char('/'), opt(many1(none_of("/\n"))))(i)?;
-	let (i, _) = opt(char('/'))(i)?;
-	Ok((i, Command::Search(s.map(|re| re.into_iter().collect()))))
-}
-
 fn parse_exec(i: &str) -> IResult<&str, Command> {
 	let (i, s) = preceded(char('!'), parse_path)(i)?;
 	Ok((i, Command::Exec(s.to_string())))
@@ -167,38 +145,41 @@ pub fn parse_terminator(i: &str) -> IResult<&str, Command> {
 }
 
 // Helpers
-fn parse_range(i: &str) -> IResult<&str, Range> {
-	alt((parse_range_special, parse_range_tuple, parse_range_simple))(i)
+fn parse_address(i: &str) -> IResult<&str, Address> {
+	alt((
+		parse_range_special,
+		parse_range_tuple,
+		parse_range_simple,
+		parse_search,
+	))(i)
 }
 
-fn parse_range_special(i: &str) -> IResult<&str, Range> {
+fn parse_search(i: &str) -> IResult<&str, Address> {
+	let (i, s) = preceded(char('/'), opt(many1(none_of("/\n"))))(i)?;
+	let (i, _) = opt(char('/'))(i)?;
+	Ok((i, Address::Regex(s.map(|re| re.into_iter().collect()))))
+}
+
+fn parse_range_special(i: &str) -> IResult<&str, Address> {
 	let (i, c) = anychar(i)?;
 	let range = match c {
-		'%' | ',' => Range {
-			from: Line::Abs(0),
-			to: Line::Abs(-1),
-		},
-		';' => Range {
-			from: Line::Rel(0),
-			to: Line::Abs(-1),
-		},
+		'%' | ',' => Address::Range(Line::Abs(0), Line::Abs(-1)),
+		';' => Address::Range(Line::Rel(0), Line::Abs(-1)),
 		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
 	};
 	Ok((i, range))
 }
 
-fn parse_range_tuple(i: &str) -> IResult<&str, Range> {
+fn parse_range_tuple(i: &str) -> IResult<&str, Address> {
 	let (i, f) = parse_line(i)?;
 	let (i, _) = char(',')(i)?;
 	let (i, t) = parse_line(i)?;
-	let r = Range { from: f, to: t };
-	Ok((i, r))
+	Ok((i, Address::Range(f, t)))
 }
 
-fn parse_range_simple(i: &str) -> IResult<&str, Range> {
+fn parse_range_simple(i: &str) -> IResult<&str, Address> {
 	let (i, f) = parse_line(i)?;
-	let r = Range { from: f, to: f };
-	Ok((i, r))
+	Ok((i, Address::Range(f, f)))
 }
 
 fn parse_sign(i: &str) -> IResult<&str, char> {

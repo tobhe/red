@@ -18,7 +18,7 @@ mod error;
 mod parser;
 
 use crate::error::CommandError;
-use crate::parser::{parse_command, parse_terminator, Command, CommandFlags, Line, Range};
+use crate::parser::{parse_command, parse_terminator, Address, Command, CommandFlags, Line};
 use std::convert::TryFrom;
 use std::env;
 use std::fs;
@@ -114,10 +114,56 @@ fn print_range(s: &State, from: usize, to: usize, flags: CommandFlags) {
 		.for_each(fun);
 }
 
-fn handle_command(s: &mut State, c: (Range, Option<Command>, CommandFlags)) -> Result<()> {
+fn handle_command(
+	s: &mut State,
+	c: (Option<Address>, Option<Command>, CommandFlags),
+) -> Result<()> {
 	let (range, command, mut flags) = c;
-	let mut from = update_line(s, range.from)?;
-	let mut to = update_line(s, range.to)?;
+
+	let from;
+	let to;
+	match range {
+		Some(Address::Range(f, t)) => {
+			from = update_line(s, f)?;
+			to = update_line(s, t)?;
+		}
+		Some(Address::Regex(re)) => {
+			let (i, r) = if let Some(re) = re {
+				s.last_match.1 =
+					Some(Regex::new(&re).map_err(|_| CommandError::new("invalid regex"))?);
+				(s.line, s.last_match.1.as_ref().unwrap())
+			} else {
+				(
+					s.last_match
+						.0
+						.ok_or(CommandError::new("no previous search"))?,
+					s.last_match
+						.1
+						.as_ref()
+						.ok_or(CommandError::new("no previous search"))?,
+				)
+			};
+			let head = s.buffer.lines().enumerate().take(i + 1);
+			let tail = s.buffer.lines().enumerate().skip(i + 1);
+			let (i, _) = tail
+				.chain(head)
+				.find(|(_, l)| r.is_match(l))
+				.ok_or(CommandError::new("no match"))?;
+			s.last_match.0 = Some(i);
+			from = i;
+			to = i;
+
+			// Print if no command was given
+			if command.is_none() {
+				flags = flags | CommandFlags::PRINT;
+			}
+		}
+		None => {
+			from = update_line(s, Line::Rel(0))?;
+			to = update_line(s, Line::Rel(0))?;
+		}
+	}
+
 	match command {
 		None => {
 			if flags.is_empty() {
@@ -147,10 +193,15 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>, CommandFlags)) -> R
 			return Ok(());
 		}
 		Some(com @ Command::Change) | Some(com @ Command::Delete) => {
+			println!("f: {} t: {}", from, to);
 			let head = s.buffer.lines().take(from);
 			let tail = s.buffer.lines().skip(to + 1);
 			s.buffer = head.chain(tail).fold(String::new(), |e, l| e + l + "\n");
+			let old = s.total;
 			s.total = s.buffer.lines().count();
+			if s.line > to {
+				s.line = s.line - (old - s.total);
+			}
 			match com {
 				Command::Change => {
 					s.mode = Mode::InsertMode(from, String::new(), flags);
@@ -191,31 +242,6 @@ fn handle_command(s: &mut State, c: (Range, Option<Command>, CommandFlags)) -> R
 		}
 		Some(Command::Prompt) => {
 			s.prompt = !s.prompt;
-		}
-		Some(Command::Search(re)) => {
-			let (i, r) = if let Some(re) = re {
-				s.last_match.1 =
-					Some(Regex::new(&re).map_err(|_| CommandError::new("invalid regex"))?);
-				(
-					s.line,
-					s.last_match.1.as_ref().unwrap(),
-				)
-			} else {
-				(
-					s.last_match.0.ok_or(CommandError::new("no previous search"))?,
-					s.last_match.1.as_ref().ok_or(CommandError::new("no previous search"))?,
-				)
-			};
-			let head = s.buffer.lines().enumerate().take(i + 1);
-			let tail = s.buffer.lines().enumerate().skip(i + 1);
-			let (i, _) = tail
-				.chain(head)
-				.find(|(_, l)| r.is_match(l))
-				.ok_or(CommandError::new("no match"))?;
-			s.last_match.0 = Some(i);
-			from = i;
-			to = i;
-			flags = flags | CommandFlags::PRINT;
 		}
 		Some(Command::Write(f)) => {
 			if let Some(f) = f {

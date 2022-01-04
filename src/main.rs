@@ -193,7 +193,6 @@ fn handle_command(
 			return Ok(());
 		}
 		Some(com @ Command::Change) | Some(com @ Command::Delete) => {
-			println!("f: {} t: {}", from, to);
 			let head = s.buffer.lines().take(from);
 			let tail = s.buffer.lines().skip(to + 1);
 			s.buffer = head.chain(tail).fold(String::new(), |e, l| e + l + "\n");

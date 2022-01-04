@@ -114,6 +114,50 @@ fn print_range(s: &State, from: usize, to: usize, flags: PrintFlag) {
 		.for_each(fun);
 }
 
+fn find_regex(s: &mut State, regex: Option<&String>, forward: bool) -> Result<(usize, usize)> {
+	let (i, r) = if let Some(re) = regex {
+		s.last_match.1 = Some(Regex::new(&re).map_err(|_| CommandError::new("invalid regex"))?);
+		(s.line, s.last_match.1.as_ref().unwrap())
+	} else {
+		(
+			s.last_match
+				.0
+				.ok_or(CommandError::new("no previous search"))?,
+			s.last_match
+				.1
+				.as_ref()
+				.ok_or(CommandError::new("no previous search"))?,
+		)
+	};
+	let (i, _) = match forward {
+		true => s
+			.buffer
+			.lines()
+			.enumerate()
+			.skip(i + 1)
+			.chain(s.buffer.lines().enumerate().take(i + 1))
+			.find(|(_, l)| r.is_match(l))
+			.ok_or(CommandError::new("no match"))?,
+		false => {
+			// XXX: Find a more efficcient solution
+			let vec: Vec<(usize, &str)> = s
+				.buffer
+				.lines()
+				.enumerate()
+				.skip(i)
+				.chain(s.buffer.lines().enumerate().take(i))
+				.collect();
+			vec.into_iter()
+				.rfind(|(_, l)| r.is_match(l))
+				.ok_or(CommandError::new("no match"))?
+		}
+	};
+	s.last_match.0 = Some(i);
+
+	// Print if no command was given
+	Ok((i, i))
+}
+
 fn handle_command(s: &mut State, c: (Option<Address>, Option<Command>, PrintFlag)) -> Result<()> {
 	let (range, command, mut flags) = c;
 
@@ -126,37 +170,21 @@ fn handle_command(s: &mut State, c: (Option<Address>, Option<Command>, PrintFlag
 			}
 			(from, to)
 		}
-		Some(Address::Regex(re)) => {
-			let (i, r) = if let Some(re) = re {
-				s.last_match.1 =
-					Some(Regex::new(&re).map_err(|_| CommandError::new("invalid regex"))?);
-				(s.line, s.last_match.1.as_ref().unwrap())
-			} else {
-				(
-					s.last_match
-						.0
-						.ok_or(CommandError::new("no previous search"))?,
-					s.last_match
-						.1
-						.as_ref()
-						.ok_or(CommandError::new("no previous search"))?,
-				)
-			};
-			let head = s.buffer.lines().enumerate().take(i + 1);
-			let tail = s.buffer.lines().enumerate().skip(i + 1);
-			let (i, _) = tail
-				.chain(head)
-				.find(|(_, l)| r.is_match(l))
-				.ok_or(CommandError::new("no match"))?;
-			s.last_match.0 = Some(i);
-
-			// Print if no command was given
+		Some(Address::Next(re)) => {
 			if command.is_none() {
 				if flags == PrintFlag::None {
 					flags = PrintFlag::Print;
 				}
 			}
-			(i, i)
+			find_regex(s, re.as_ref(), true)?
+		}
+		Some(Address::Prev(re)) => {
+			if command.is_none() {
+				if flags == PrintFlag::None {
+					flags = PrintFlag::Print;
+				}
+			}
+			find_regex(s, re.as_ref(), false)?
 		}
 		None => (update_line(s, Line::Rel(0))?, update_line(s, Line::Rel(0))?),
 	};

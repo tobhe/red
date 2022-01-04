@@ -28,8 +28,9 @@ use nom::{
 };
 
 pub enum Address {
-	Range(Line, Line),     // (.,.)		Address range
-	Regex(Option<String>), // /re/		Next line containing the regex
+	Range(Line, Line),    // (.,.)		Address range
+	Next(Option<String>), // /re/		Next line containing the regex
+	Prev(Option<String>), // ?re?		Previous line containing the regex
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -154,14 +155,20 @@ fn parse_address(i: &str) -> IResult<&str, Address> {
 		parse_range_special,
 		parse_range_tuple,
 		parse_range_simple,
-		parse_search,
+		parse_regex,
 	))(i)
 }
 
-fn parse_search(i: &str) -> IResult<&str, Address> {
-	let (i, s) = preceded(char('/'), opt(many1(none_of("/\n"))))(i)?;
-	let (i, _) = opt(char('/'))(i)?;
-	Ok((i, Address::Regex(s.map(|re| re.into_iter().collect()))))
+fn parse_regex(i: &str) -> IResult<&str, Address> {
+	let (i, (c, s, _)) = alt((
+		tuple((char('/'), opt(many1(none_of("/?\n"))), opt(char('/')))),
+		tuple((char('?'), opt(many1(none_of("/?\n"))), opt(char('?')))),
+	))(i)?;
+	match c {
+		'/' => Ok((i, Address::Next(s.map(|re| re.into_iter().collect())))),
+		'?' => Ok((i, Address::Prev(s.map(|re| re.into_iter().collect())))),
+		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
+	}
 }
 
 fn parse_range_special(i: &str) -> IResult<&str, Address> {

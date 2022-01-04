@@ -120,12 +120,9 @@ fn handle_command(
 ) -> Result<()> {
 	let (range, command, mut flags) = c;
 
-	let from;
-	let to;
-	match range {
+	let (from, to) = match range {
 		Some(Address::Range(f, t)) => {
-			from = update_line(s, f)?;
-			to = update_line(s, t)?;
+			(update_line(s, f)?, update_line(s, t)?)
 		}
 		Some(Address::Regex(re)) => {
 			let (i, r) = if let Some(re) = re {
@@ -150,19 +147,17 @@ fn handle_command(
 				.find(|(_, l)| r.is_match(l))
 				.ok_or(CommandError::new("no match"))?;
 			s.last_match.0 = Some(i);
-			from = i;
-			to = i;
 
 			// Print if no command was given
 			if command.is_none() {
 				flags = flags | CommandFlags::PRINT;
 			}
+			(i, i)
 		}
 		None => {
-			from = update_line(s, Line::Rel(0))?;
-			to = update_line(s, Line::Rel(0))?;
+			(update_line(s, Line::Rel(0))?, update_line(s, Line::Rel(0))?)
 		}
-	}
+	};
 
 	match command {
 		None => {

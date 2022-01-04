@@ -16,7 +16,6 @@
 
 extern crate nom;
 
-use bitflags::bitflags;
 use nom::{
 	branch::alt,
 	character::complete::{anychar, char, i32, newline, none_of},
@@ -60,15 +59,14 @@ pub enum Command {
 	Quit,                  // q		Quit
 }
 
-bitflags! {
-	pub struct CommandFlags: u8 {
-		const NONE = 0x00;
-		const PRINT = 0x01;	// (.,.)n	Print lines with index
-		const NUMBER = 0x02;	// (.,.)p	Print lines
-	}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PrintFlag {
+	None,
+	Print,
+	Number,
 }
 
-pub fn parse_command(i: &str) -> IResult<&str, (Option<Address>, Option<Command>, CommandFlags)> {
+pub fn parse_command(i: &str) -> IResult<&str, (Option<Address>, Option<Command>, PrintFlag)> {
 	let (i, (r, c, f)) = terminated(
 		tuple((
 			opt(parse_address),
@@ -82,7 +80,13 @@ pub fn parse_command(i: &str) -> IResult<&str, (Option<Address>, Option<Command>
 		(
 			r,
 			c,
-			f.into_iter().fold(CommandFlags::NONE, |fs, flag| fs | flag),
+			f.into_iter().fold(PrintFlag::None, |fs, flag| {
+				if fs == PrintFlag::None || (fs == PrintFlag::Print && flag == PrintFlag::Number) {
+					flag
+				} else {
+					fs
+				}
+			}),
 		),
 	))
 }
@@ -105,11 +109,11 @@ fn parse_command_char(i: &str) -> IResult<&str, Command> {
 	Ok((i, cmd))
 }
 
-fn parse_flag(i: &str) -> IResult<&str, CommandFlags> {
+fn parse_flag(i: &str) -> IResult<&str, PrintFlag> {
 	let (i, c) = anychar(i)?;
 	let f = match c {
-		'n' => CommandFlags::NUMBER,
-		'p' => CommandFlags::PRINT,
+		'n' => PrintFlag::Number,
+		'p' => PrintFlag::Print,
 		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
 	};
 	Ok((i, f))

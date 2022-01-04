@@ -18,7 +18,7 @@ mod error;
 mod parser;
 
 use crate::error::CommandError;
-use crate::parser::{parse_command, parse_terminator, Address, Command, CommandFlags, Line};
+use crate::parser::{parse_command, parse_terminator, Address, Command, Line, PrintFlag};
 use std::convert::TryFrom;
 use std::env;
 use std::fs;
@@ -60,7 +60,7 @@ impl Default for State {
 #[derive(PartialEq)]
 enum Mode {
 	CommandMode,
-	InsertMode(usize, String, CommandFlags),
+	InsertMode(usize, String, PrintFlag),
 }
 
 fn read_file(f: &str) -> Result<State> {
@@ -100,8 +100,8 @@ fn update_line(s: &mut State, l: Line) -> Result<usize> {
 	}
 }
 
-fn print_range(s: &State, from: usize, to: usize, flags: CommandFlags) {
-	let fun = if flags.contains(CommandFlags::NUMBER) {
+fn print_range(s: &State, from: usize, to: usize, flags: PrintFlag) {
+	let fun = if flags == PrintFlag::Number {
 		|(i, s)| println!("{}\t{}", i + 1, s)
 	} else {
 		|(_, s)| println!("{}", s)
@@ -114,10 +114,7 @@ fn print_range(s: &State, from: usize, to: usize, flags: CommandFlags) {
 		.for_each(fun);
 }
 
-fn handle_command(
-	s: &mut State,
-	c: (Option<Address>, Option<Command>, CommandFlags),
-) -> Result<()> {
+fn handle_command(s: &mut State, c: (Option<Address>, Option<Command>, PrintFlag)) -> Result<()> {
 	let (range, command, mut flags) = c;
 
 	let (from, to) = match range {
@@ -155,7 +152,9 @@ fn handle_command(
 
 			// Print if no command was given
 			if command.is_none() {
-				flags = flags | CommandFlags::PRINT;
+				if flags == PrintFlag::None {
+					flags = PrintFlag::Print;
+				}
 			}
 			(i, i)
 		}
@@ -164,7 +163,7 @@ fn handle_command(
 
 	match command {
 		None => {
-			if flags.is_empty() {
+			if flags == PrintFlag::None {
 				if from != to {
 					return Err(CommandError::new("Expected single line"));
 				}
@@ -259,7 +258,7 @@ fn handle_command(
 			return Err(CommandError::new("invalid command"));
 		}
 	}
-	if !flags.is_empty() {
+	if flags != PrintFlag::None {
 		print_range(s, from, to, flags);
 	}
 	Ok(())
@@ -304,7 +303,7 @@ fn main() {
 					state.total = state.buffer.lines().count();
 					state.mode = Mode::CommandMode;
 					state.changed = true;
-					if !flags.is_empty() {
+					if flags != PrintFlag::None {
 						print_range(&state, l, l, flags);
 					}
 				} else {

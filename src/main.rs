@@ -122,7 +122,12 @@ fn handle_command(
 
 	let (from, to) = match range {
 		Some(Address::Range(f, t)) => {
-			(update_line(s, f)?, update_line(s, t)?)
+			let from = update_line(s, f)?;
+			let to = update_line(s, t)?;
+			if from > to {
+				return Err(CommandError::new("invalid address"));
+			}
+			(from, to)
 		}
 		Some(Address::Regex(re)) => {
 			let (i, r) = if let Some(re) = re {
@@ -154,9 +159,7 @@ fn handle_command(
 			}
 			(i, i)
 		}
-		None => {
-			(update_line(s, Line::Rel(0))?, update_line(s, Line::Rel(0))?)
-		}
+		None => (update_line(s, Line::Rel(0))?, update_line(s, Line::Rel(0))?),
 	};
 
 	match command {

@@ -21,16 +21,17 @@ use crate::error::CommandError;
 use crate::parser::{parse_command, parse_terminator, Address, AddressRange, Command, PrintFlag};
 use std::convert::TryFrom;
 use std::env;
-use std::fs;
-use std::io::{self, Write};
+use std::fs::{self, File};
+use std::io::{self, BufRead, Write};
 use std::process;
+use std::iter;
 
 use regex::Regex;
 
 type Result<T> = std::result::Result<T, CommandError>;
 
 struct State {
-	buffer: String,
+	buffer: Vec<String>,
 	changed: bool,
 	file: String,
 	last_match: (Option<usize>, Option<regex::Regex>),
@@ -45,7 +46,7 @@ struct State {
 impl Default for State {
 	fn default() -> Self {
 		State {
-			buffer: String::from(""),
+			buffer: Vec::new(),
 			changed: false,
 			file: String::from(""),
 			last_match: (None, None),
@@ -59,16 +60,36 @@ impl Default for State {
 	}
 }
 
+fn buf_as_string(b: &Vec<String>) -> String
+{
+	b.iter().fold(String::new(), |e, l| e + l + "\n")
+}
+
 #[derive(PartialEq)]
 enum Mode {
 	CommandMode,
 	InsertMode(usize, PrintFlag),
 }
 
+fn read_to_vec(f: &str) -> Result<Vec<String>> {
+	let file = File::open(f).map_err(|_| CommandError::new("invalid path"))?;
+	let lines = io::BufReader::new(file).lines();
+	let mut b = Vec::new();
+	b.extend(lines.filter_map(|s| s.ok()));
+	// XXX: There must be an easier way
+	let mut len = 0;
+	for line in b.iter() {
+		len = len + line.bytes().count() + 1;
+	}
+	println!("{}", len);
+	Ok(b)
+}
+
 fn read_file(f: &str) -> Result<State> {
-	let buf = fs::read_to_string(&f).map_err(|_| CommandError::new("invalid path"))?;
-	println!("{}", buf.as_bytes().len());
-	let total = buf.lines().count();
+	// let buf = fs::read_to_string(&f)
+	// println!("{}", buf.as_bytes().len());
+	let buf = read_to_vec(&f)?;
+	let total = buf.len();
 	let last = if total > 0 { total - 1 } else { total };
 	Ok(State {
 		line: last,
@@ -80,21 +101,15 @@ fn read_file(f: &str) -> Result<State> {
 }
 
 fn write_file(s: &State, f: &str) -> Result<()> {
-	fs::write(f, s.buffer.as_str()).map_err(|_| CommandError::new("invalid path"))?;
+	fs::write(f, buf_as_string(&s.buffer)).map_err(|_| CommandError::new("invalid path"))?;
 	Ok(())
 }
 
-fn buffer_insert(s: &mut State, line: usize, buf: &String) {
-	let head = s.buffer.lines().take(line);
-	let tail = s.buffer.lines().skip(line);
-
-	s.buffer = head
-		.chain(buf.lines())
-		.chain(tail)
-		.fold(String::new(), |s, l| s + l + "\n");
-	s.total = s.buffer.lines().count();
+fn buffer_insert(s: &mut State, line: usize, buf: Vec<String>) {
+	s.line = s.line + buf.len();
+	s.buffer.splice(line..line, buf);
+	s.total = s.buffer.len();
 	s.changed = true;
-	s.line = s.line + buf.lines().count();
 }
 
 fn update_line(s: &mut State, l: Address) -> Result<usize> {
@@ -122,8 +137,7 @@ fn print_range(s: &State, from: usize, to: usize, flags: PrintFlag) {
 	} else {
 		|(_, s)| println!("{}", s)
 	};
-	s.buffer
-		.lines()
+	s.buffer.iter()
 		.enumerate()
 		.skip(from)
 		.take(to - from + 1)
@@ -146,27 +160,18 @@ fn find_regex(s: &mut State, regex: Option<&String>, forward: bool) -> Result<(u
 		)
 	};
 	let (i, _) = match forward {
-		true => s
-			.buffer
-			.lines()
+		true => s.buffer.iter()
 			.enumerate()
 			.skip(i + 1)
-			.chain(s.buffer.lines().enumerate().take(i + 1))
+			.chain(s.buffer.iter().enumerate().take(i + 1))
 			.find(|(_, l)| r.is_match(l))
 			.ok_or(CommandError::new("no match"))?,
-		false => {
-			// XXX: Find a more efficcient solution
-			let vec: Vec<(usize, &str)> = s
-				.buffer
-				.lines()
+		false => s.buffer.iter()
 				.enumerate()
 				.skip(i)
-				.chain(s.buffer.lines().enumerate().take(i))
-				.collect();
-			vec.into_iter()
+				.chain(s.buffer.iter().enumerate().take(i))
 				.rfind(|(_, l)| r.is_match(l))
 				.ok_or(CommandError::new("no match"))?
-		}
 	};
 	s.last_match.0 = Some(i);
 
@@ -235,11 +240,9 @@ fn handle_command(
 			return Ok(());
 		}
 		Some(com @ Command::Change) | Some(com @ Command::Delete) => {
-			let head = s.buffer.lines().take(from);
-			let tail = s.buffer.lines().skip(to + 1);
-			s.buffer = head.chain(tail).fold(String::new(), |e, l| e + l + "\n");
+			s.buffer.splice(from..(to + 1), iter::empty::<String>());
 			let old = s.total;
-			s.total = s.buffer.lines().count();
+			s.total = s.buffer.len();
 			if s.line > to {
 				s.line = s.line - (old - s.total);
 			}
@@ -288,13 +291,11 @@ fn handle_command(
 			s.prompt = !s.prompt;
 		}
 		Some(Command::Read(f)) => {
-			let buf = if let Some(f) = f {
-				fs::read_to_string(&f)
-			} else {
-				fs::read_to_string(&s.file)
-			}
-			.map_err(|_| CommandError::new("invalid path"))?;
-			buffer_insert(s, is_line(from, to)? + 1, &buf);
+			let buf = match f {
+				Some(f) => read_to_vec(&f),
+				_ => read_to_vec(&s.file),
+			}.map_err(|_| CommandError::new("invalid path"))?;
+			buffer_insert(s, is_line(from, to)? + 1, buf);
 		}
 		Some(Command::Write(f)) => {
 			if let Some(f) = f {
@@ -326,7 +327,7 @@ fn main() {
 		Default::default()
 	};
 
-	let mut buf = String::new();
+	let mut buf = Vec::new();
 	loop {
 		let mut input = String::new();
 		if state.mode == Mode::CommandMode && state.prompt == true {
@@ -348,14 +349,14 @@ fn main() {
 			}
 			Mode::InsertMode(l, flags) => {
 				if parse_terminator(&input).is_ok() {
-					state.mode = Mode::CommandMode;
-					buffer_insert(&mut state, l, &buf);
-					buf.clear();
+					buffer_insert(&mut state, l, buf);
+					buf = Vec::new();
 					if flags != PrintFlag::None {
 						print_range(&state, l, l, flags);
 					}
+					state.mode = Mode::CommandMode;
 				} else {
-					buf.push_str(&input);
+					buf.push(String::from(&input));
 				}
 			}
 		}

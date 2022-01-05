@@ -222,13 +222,7 @@ fn handle_command(
 		None => {
 			if flags == PrintFlag::None {
 				s.line = is_line(from, to)?;
-				println!(
-					"{}",
-					s.buffer
-						.lines()
-						.nth(s.line)
-						.ok_or(CommandError::new("invalid address"))?
-				);
+				flags = PrintFlag::Print;
 			}
 		}
 		Some(com @ Command::Append) | Some(com @ Command::Insert) => {

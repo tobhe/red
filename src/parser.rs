@@ -57,7 +57,7 @@ pub enum Command {
 	Insert,                // (.)i		Insert text before current line
 	Mark(u8),              // kx		Marks a line with a lower case letter
 	Prompt,                // P		Enable * prompt
-	Read,                  // ($)r		Reads file to after the addressed line
+	Read(Option<String>),  // ($)r		Reads file to after the addressed line
 	Write(Option<String>), // w file	Write buffer to file
 	Quit,                  // q		Quit
 }
@@ -110,7 +110,6 @@ fn parse_simple_cmd(i: &str) -> IResult<&str, Command> {
 		'i' => Command::Insert,
 		'P' => Command::Prompt,
 		'q' => Command::Quit,
-		'r' => Command::Read,
 		'=' => Command::CurLine,
 		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
 	};
@@ -135,6 +134,7 @@ fn parse_file_cmd(i: &str) -> IResult<&str, Command> {
 			s.ok_or(Err::Error(Error::new("line", ErrorKind::Char)))?
 				.to_string(),
 		),
+		'r' => Command::Read(s.map(ToString::to_string)),
 		'w' => Command::Write(s.map(ToString::to_string)),
 		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
 	};

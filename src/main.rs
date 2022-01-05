@@ -62,7 +62,7 @@ impl Default for State {
 #[derive(PartialEq)]
 enum Mode {
 	CommandMode,
-	InsertMode(usize, String, PrintFlag),
+	InsertMode(usize, PrintFlag),
 }
 
 fn read_file(f: &str) -> Result<State> {
@@ -82,6 +82,19 @@ fn read_file(f: &str) -> Result<State> {
 fn write_file(s: &State, f: &str) -> Result<()> {
 	fs::write(f, s.buffer.as_str()).map_err(|_| CommandError::new("invalid path"))?;
 	Ok(())
+}
+
+fn buffer_insert(s: &mut State, line: usize, buf: &String) {
+	let head = s.buffer.lines().take(line);
+	let tail = s.buffer.lines().skip(line);
+
+	s.buffer = head
+		.chain(buf.lines())
+		.chain(tail)
+		.fold(String::new(), |s, l| s + l + "\n");
+	s.total = s.buffer.lines().count();
+	s.changed = true;
+	s.line = s.line + buf.lines().count();
 }
 
 fn update_line(s: &mut State, l: Address) -> Result<usize> {
@@ -224,7 +237,7 @@ fn handle_command(
 				Command::Insert => is_line(from, to)?,
 				_ => unreachable!(),
 			};
-			s.mode = Mode::InsertMode(line, String::new(), flags);
+			s.mode = Mode::InsertMode(line, flags);
 			return Ok(());
 		}
 		Some(com @ Command::Change) | Some(com @ Command::Delete) => {
@@ -238,7 +251,7 @@ fn handle_command(
 			}
 			match com {
 				Command::Change => {
-					s.mode = Mode::InsertMode(from, String::new(), flags);
+					s.mode = Mode::InsertMode(from, flags);
 					return Ok(());
 				}
 				Command::Delete => s.changed = true,
@@ -280,6 +293,15 @@ fn handle_command(
 		Some(Command::Prompt) => {
 			s.prompt = !s.prompt;
 		}
+		Some(Command::Read(f)) => {
+			let buf = if let Some(f) = f {
+				fs::read_to_string(&f)
+			} else {
+				fs::read_to_string(&s.file)
+			}
+			.map_err(|_| CommandError::new("invalid path"))?;
+			buffer_insert(s, is_line(from, to)? + 1, &buf);
+		}
 		Some(Command::Write(f)) => {
 			if let Some(f) = f {
 				write_file(s, &f)?;
@@ -294,9 +316,6 @@ fn handle_command(
 				return Err(CommandError::new("warning: file modified"));
 			}
 			process::exit(0);
-		}
-		_ => {
-			return Err(CommandError::new("invalid command"));
 		}
 	}
 	if flags != PrintFlag::None {
@@ -313,6 +332,7 @@ fn main() {
 		Default::default()
 	};
 
+	let mut buf = String::new();
 	loop {
 		let mut input = String::new();
 		if state.mode == Mode::CommandMode && state.prompt == true {
@@ -332,23 +352,16 @@ fn main() {
 						}
 					});
 			}
-			Mode::InsertMode(l, ref mut b, flags) => {
+			Mode::InsertMode(l, flags) => {
 				if parse_terminator(&input).is_ok() {
-					// Write to buf
-					let head = state.buffer.lines().take(l);
-					let tail = state.buffer.lines().skip(l);
-					state.buffer = head
-						.chain(b.lines())
-						.chain(tail)
-						.fold(String::new(), |s, l| s + l + "\n");
-					state.total = state.buffer.lines().count();
 					state.mode = Mode::CommandMode;
-					state.changed = true;
+					buffer_insert(&mut state, l, &buf);
+					buf.clear();
 					if flags != PrintFlag::None {
 						print_range(&state, l, l, flags);
 					}
 				} else {
-					b.push_str(&input);
+					buf.push_str(&input);
 				}
 			}
 		}

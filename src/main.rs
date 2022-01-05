@@ -18,7 +18,7 @@ mod error;
 mod parser;
 
 use crate::error::CommandError;
-use crate::parser::{parse_command, parse_terminator, Address, Command, Line, PrintFlag};
+use crate::parser::{parse_command, parse_terminator, Address, AddressRange, Command, PrintFlag};
 use std::convert::TryFrom;
 use std::env;
 use std::fs;
@@ -30,29 +30,31 @@ use regex::Regex;
 type Result<T> = std::result::Result<T, CommandError>;
 
 struct State {
-	changed: bool,
-	line: usize,
-	total: usize,
-	mode: Mode,
 	buffer: String,
-	prompt: bool,
-	verbose: bool,
+	changed: bool,
 	file: String,
 	last_match: (Option<usize>, Option<regex::Regex>),
+	line: usize,
+	marks: [Option<usize>; 26],
+	mode: Mode,
+	prompt: bool,
+	total: usize,
+	verbose: bool,
 }
 
 impl Default for State {
 	fn default() -> Self {
 		State {
-			changed: false,
-			line: 0,
-			total: 1,
-			mode: Mode::CommandMode,
 			buffer: String::from(""),
-			prompt: false,
-			verbose: false,
+			changed: false,
 			file: String::from(""),
 			last_match: (None, None),
+			line: 0,
+			marks: [None; 26],
+			mode: Mode::CommandMode,
+			prompt: false,
+			total: 1,
+			verbose: false,
 		}
 	}
 }
@@ -82,16 +84,17 @@ fn write_file(s: &State, f: &str) -> Result<()> {
 	Ok(())
 }
 
-fn update_line(s: &mut State, l: Line) -> Result<usize> {
+fn update_line(s: &mut State, l: Address) -> Result<usize> {
 	let newline = match l {
-		Line::Abs(c) => {
+		Address::Abs(c) => {
 			if c < 0 {
 				usize::try_from(i32::try_from(s.total)? + c)?
 			} else {
 				usize::try_from(c)?
 			}
 		}
-		Line::Rel(c) => usize::try_from(i32::try_from(s.line)? + c)?,
+		Address::Rel(c) => usize::try_from(i32::try_from(s.line)? + c)?,
+		Address::Mark(m) => s.marks[usize::from(m)].ok_or(CommandError::new("invalid mark"))?,
 	};
 	if newline < s.total {
 		Ok(newline)
@@ -158,11 +161,21 @@ fn find_regex(s: &mut State, regex: Option<&String>, forward: bool) -> Result<(u
 	Ok((i, i))
 }
 
-fn handle_command(s: &mut State, c: (Option<Address>, Option<Command>, PrintFlag)) -> Result<()> {
+fn is_line(from: usize, to: usize) -> Result<usize> {
+	if from != to {
+		return Err(CommandError::new("Expected single line"));
+	}
+	Ok(to)
+}
+
+fn handle_command(
+	s: &mut State,
+	c: (Option<AddressRange>, Option<Command>, PrintFlag),
+) -> Result<()> {
 	let (range, command, mut flags) = c;
 
 	let (from, to) = match range {
-		Some(Address::Range(f, t)) => {
+		Some(AddressRange::Range(f, t)) => {
 			let from = update_line(s, f)?;
 			let to = update_line(s, t)?;
 			if from > to {
@@ -170,7 +183,7 @@ fn handle_command(s: &mut State, c: (Option<Address>, Option<Command>, PrintFlag
 			}
 			(from, to)
 		}
-		Some(Address::Next(re)) => {
+		Some(AddressRange::Next(re)) => {
 			if command.is_none() {
 				if flags == PrintFlag::None {
 					flags = PrintFlag::Print;
@@ -178,7 +191,7 @@ fn handle_command(s: &mut State, c: (Option<Address>, Option<Command>, PrintFlag
 			}
 			find_regex(s, re.as_ref(), true)?
 		}
-		Some(Address::Prev(re)) => {
+		Some(AddressRange::Prev(re)) => {
 			if command.is_none() {
 				if flags == PrintFlag::None {
 					flags = PrintFlag::Print;
@@ -186,16 +199,16 @@ fn handle_command(s: &mut State, c: (Option<Address>, Option<Command>, PrintFlag
 			}
 			find_regex(s, re.as_ref(), false)?
 		}
-		None => (update_line(s, Line::Rel(0))?, update_line(s, Line::Rel(0))?),
+		None => (
+			update_line(s, Address::Rel(0))?,
+			update_line(s, Address::Rel(0))?,
+		),
 	};
 
 	match command {
 		None => {
 			if flags == PrintFlag::None {
-				if from != to {
-					return Err(CommandError::new("Expected single line"));
-				}
-				s.line = to;
+				s.line = is_line(from, to)?;
 				println!(
 					"{}",
 					s.buffer
@@ -206,12 +219,9 @@ fn handle_command(s: &mut State, c: (Option<Address>, Option<Command>, PrintFlag
 			}
 		}
 		Some(com @ Command::Append) | Some(com @ Command::Insert) => {
-			if from != to {
-				return Err(CommandError::new("Expected single line"));
-			}
 			let line = match com {
-				Command::Append => to + 1,
-				Command::Insert => to,
+				Command::Append => is_line(from, to)? + 1,
+				Command::Insert => is_line(from, to)?,
 				_ => unreachable!(),
 			};
 			s.mode = Mode::InsertMode(line, String::new(), flags);
@@ -263,6 +273,9 @@ fn handle_command(s: &mut State, c: (Option<Address>, Option<Command>, PrintFlag
 		}
 		Some(Command::Help) => {
 			s.verbose = !s.verbose;
+		}
+		Some(Command::Mark(m)) => {
+			s.marks[usize::from(m)] = Some(is_line(from, to)?);
 		}
 		Some(Command::Prompt) => {
 			s.prompt = !s.prompt;

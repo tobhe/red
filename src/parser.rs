@@ -27,16 +27,17 @@ use nom::{
 	Err, IResult, InputTakeAtPosition,
 };
 
-pub enum Address {
-	Range(Line, Line),    // (.,.)		Address range
-	Next(Option<String>), // /re/		Next line containing the regex
-	Prev(Option<String>), // ?re?		Previous line containing the regex
+pub enum AddressRange {
+	Range(Address, Address), // (.,.)	Address range
+	Next(Option<String>),    // /re/	Next line containing the regex
+	Prev(Option<String>),    // ?re?	Previous line containing the regex
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Line {
-	Rel(i32),
-	Abs(i32),
+pub enum Address {
+	Abs(i32), // N		Nth line in the buffer
+	Rel(i32), // +-N	Nth next or previous line
+	Mark(u8), // 'x		Line previosly marked with x
 }
 
 /*
@@ -54,6 +55,7 @@ pub enum Command {
 	File(String),          // f file        Set default filename
 	Help,                  // H		Toggle error explanations
 	Insert,                // (.)i		Insert text before current line
+	Mark(u8),              // kx		Marks a line with a lower case letter
 	Prompt,                // P		Enable * prompt
 	Read,                  // ($)r		Reads file to after the addressed line
 	Write(Option<String>), // w file	Write buffer to file
@@ -67,11 +69,16 @@ pub enum PrintFlag {
 	Number,
 }
 
-pub fn parse_command(i: &str) -> IResult<&str, (Option<Address>, Option<Command>, PrintFlag)> {
+pub fn parse_command(i: &str) -> IResult<&str, (Option<AddressRange>, Option<Command>, PrintFlag)> {
 	let (i, (r, c, f)) = terminated(
 		tuple((
-			opt(parse_address),
-			opt(alt((parse_command_char, parse_file_command, parse_exec))),
+			opt(parse_address_range),
+			opt(alt((
+				parse_simple_cmd,
+				parse_mark_cmd,
+				parse_file_cmd,
+				parse_exec_cmd,
+			))),
 			many0(parse_flag),
 		)),
 		newline,
@@ -93,7 +100,7 @@ pub fn parse_command(i: &str) -> IResult<&str, (Option<Address>, Option<Command>
 }
 
 // Commands
-fn parse_command_char(i: &str) -> IResult<&str, Command> {
+fn parse_simple_cmd(i: &str) -> IResult<&str, Command> {
 	let (i, c) = anychar(i)?;
 	let cmd = match c {
 		'a' => Command::Append,
@@ -110,17 +117,17 @@ fn parse_command_char(i: &str) -> IResult<&str, Command> {
 	Ok((i, cmd))
 }
 
-fn parse_flag(i: &str) -> IResult<&str, PrintFlag> {
-	let (i, c) = anychar(i)?;
-	let f = match c {
-		'n' => PrintFlag::Number,
-		'p' => PrintFlag::Print,
-		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
-	};
-	Ok((i, f))
+fn parse_mark_cmd(i: &str) -> IResult<&str, Command> {
+	let (i, c) = preceded(char('m'), anychar)(i)?;
+	let c = c as u8;
+	if c > 0x60 && c < 0x7b {
+		Ok((i, Command::Mark(c - 0x61)))
+	} else {
+		Err(Err::Error(Error::new("line", ErrorKind::Char)))
+	}
 }
 
-fn parse_file_command(i: &str) -> IResult<&str, Command> {
+fn parse_file_cmd(i: &str) -> IResult<&str, Command> {
 	let (i, (c, s)) = tuple((anychar, opt(preceded(char(' '), parse_path))))(i)?;
 	let cmd = match c {
 		'e' => Command::Edit(s.map(ToString::to_string)),
@@ -134,7 +141,7 @@ fn parse_file_command(i: &str) -> IResult<&str, Command> {
 	Ok((i, cmd))
 }
 
-fn parse_exec(i: &str) -> IResult<&str, Command> {
+fn parse_exec_cmd(i: &str) -> IResult<&str, Command> {
 	let (i, s) = preceded(char('!'), parse_path)(i)?;
 	Ok((i, Command::Exec(s.to_string())))
 }
@@ -150,80 +157,101 @@ pub fn parse_terminator(i: &str) -> IResult<&str, Command> {
 }
 
 // Helpers
-fn parse_address(i: &str) -> IResult<&str, Address> {
+fn parse_address_range(i: &str) -> IResult<&str, AddressRange> {
 	alt((
-		parse_range_special,
-		parse_range_tuple,
-		parse_range_simple,
+		parse_special_range,
+		parse_tuple_range,
+		parse_simple_range,
 		parse_regex,
 	))(i)
 }
 
-fn parse_regex(i: &str) -> IResult<&str, Address> {
+fn parse_regex(i: &str) -> IResult<&str, AddressRange> {
 	let (i, (c, s, _)) = alt((
 		tuple((char('/'), opt(many1(none_of("/?\n"))), opt(char('/')))),
 		tuple((char('?'), opt(many1(none_of("/?\n"))), opt(char('?')))),
 	))(i)?;
 	match c {
-		'/' => Ok((i, Address::Next(s.map(|re| re.into_iter().collect())))),
-		'?' => Ok((i, Address::Prev(s.map(|re| re.into_iter().collect())))),
+		'/' => Ok((i, AddressRange::Next(s.map(|re| re.into_iter().collect())))),
+		'?' => Ok((i, AddressRange::Prev(s.map(|re| re.into_iter().collect())))),
 		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
 	}
 }
 
-fn parse_range_special(i: &str) -> IResult<&str, Address> {
+fn parse_special_range(i: &str) -> IResult<&str, AddressRange> {
 	let (i, c) = anychar(i)?;
 	let range = match c {
-		'%' | ',' => Address::Range(Line::Abs(0), Line::Abs(-1)),
-		';' => Address::Range(Line::Rel(0), Line::Abs(-1)),
+		'%' | ',' => AddressRange::Range(Address::Abs(0), Address::Abs(-1)),
+		';' => AddressRange::Range(Address::Rel(0), Address::Abs(-1)),
 		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
 	};
 	Ok((i, range))
 }
 
-fn parse_range_tuple(i: &str) -> IResult<&str, Address> {
-	let (i, f) = parse_line(i)?;
+fn parse_tuple_range(i: &str) -> IResult<&str, AddressRange> {
+	let (i, f) = parse_address(i)?;
 	let (i, _) = char(',')(i)?;
-	let (i, t) = parse_line(i)?;
-	Ok((i, Address::Range(f, t)))
+	let (i, t) = parse_address(i)?;
+	Ok((i, AddressRange::Range(f, t)))
 }
 
-fn parse_range_simple(i: &str) -> IResult<&str, Address> {
-	let (i, f) = parse_line(i)?;
-	Ok((i, Address::Range(f, f)))
+fn parse_simple_range(i: &str) -> IResult<&str, AddressRange> {
+	let (i, f) = parse_address(i)?;
+	Ok((i, AddressRange::Range(f, f)))
 }
 
 fn parse_sign(i: &str) -> IResult<&str, char> {
 	alt((char('+'), char('-')))(i)
 }
 
-fn parse_line(i: &str) -> IResult<&str, Line> {
-	alt((parse_line_regular, parse_line_special))(i)
+fn parse_address(i: &str) -> IResult<&str, Address> {
+	alt((parse_mark_addr, parse_line_addr, parse_special_addr))(i)
 }
 
-fn parse_line_special(i: &str) -> IResult<&str, Line> {
+fn parse_special_addr(i: &str) -> IResult<&str, Address> {
 	let (i, c) = anychar(i)?;
 	let line = match c {
-		'.' => Line::Rel(0),
-		'$' => Line::Abs(-1),
-		'+' => Line::Rel(1),
-		'-' | '^' => Line::Rel(-1),
+		'.' => Address::Rel(0),
+		'$' => Address::Abs(-1),
+		'+' => Address::Rel(1),
+		'-' | '^' => Address::Rel(-1),
 		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
 	};
 	Ok((i, line))
 }
 
-fn parse_line_regular(i: &str) -> IResult<&str, Line> {
+fn parse_line_addr(i: &str) -> IResult<&str, Address> {
 	let pref = parse_sign(i);
 	let (i, o) = i32(i)?;
 	match pref {
-		Ok(_) => Ok((i, Line::Rel(o))),
+		Ok(_) => Ok((i, Address::Rel(o))),
 		_ => {
 			if o > 0 {
-				Ok((i, Line::Abs(o - 1)))
+				Ok((i, Address::Abs(o - 1)))
 			} else {
-				return Err(Err::Error(Error::new("line", ErrorKind::Fail)));
+				return Err(Err::Error(Error::new("address", ErrorKind::Fail)));
 			}
 		}
 	}
+}
+
+fn parse_mark_addr(i: &str) -> IResult<&str, Address> {
+	let (i, c) = preceded(char('\''), anychar)(i)?;
+	let c = c as u8;
+	if c > 0x60 && c < 0x7b {
+		Ok((i, Address::Mark(c - 0x61)))
+	} else {
+		Err(Err::Error(Error::new("address", ErrorKind::Fail)))
+	}
+}
+
+// Print flags
+fn parse_flag(i: &str) -> IResult<&str, PrintFlag> {
+	let (i, c) = anychar(i)?;
+	let f = match c {
+		'n' => PrintFlag::Number,
+		'p' => PrintFlag::Print,
+		_ => return Err(Err::Error(Error::new("line", ErrorKind::Char))),
+	};
+	Ok((i, f))
 }

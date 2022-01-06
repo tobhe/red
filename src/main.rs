@@ -18,13 +18,15 @@ mod error;
 mod parser;
 
 use crate::error::CommandError;
-use crate::parser::{parse_command, parse_terminator, Address, AddressRange, Command, PrintFlag};
+use crate::parser::{
+	parse_command, parse_terminator, print_flag_set, Address, AddressRange, Command, PrintFlag,
+};
 use std::convert::TryFrom;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufRead, Write};
-use std::process;
 use std::iter;
+use std::process;
 
 use regex::Regex;
 
@@ -60,8 +62,7 @@ impl Default for State {
 	}
 }
 
-fn buf_as_string(b: &Vec<String>) -> String
-{
+fn buf_as_string(b: &Vec<String>) -> String {
 	b.iter().fold(String::new(), |e, l| e + l + "\n")
 }
 
@@ -137,7 +138,8 @@ fn print_range(s: &State, from: usize, to: usize, flags: PrintFlag) {
 	} else {
 		|(_, s)| println!("{}", s)
 	};
-	s.buffer.iter()
+	s.buffer
+		.iter()
 		.enumerate()
 		.skip(from)
 		.take(to - from + 1)
@@ -160,18 +162,22 @@ fn find_regex(s: &mut State, regex: Option<&String>, forward: bool) -> Result<(u
 		)
 	};
 	let (i, _) = match forward {
-		true => s.buffer.iter()
+		true => s
+			.buffer
+			.iter()
 			.enumerate()
 			.skip(i + 1)
 			.chain(s.buffer.iter().enumerate().take(i + 1))
 			.find(|(_, l)| r.is_match(l))
 			.ok_or(CommandError::new("no match"))?,
-		false => s.buffer.iter()
-				.enumerate()
-				.skip(i)
-				.chain(s.buffer.iter().enumerate().take(i))
-				.rfind(|(_, l)| r.is_match(l))
-				.ok_or(CommandError::new("no match"))?
+		false => s
+			.buffer
+			.iter()
+			.enumerate()
+			.skip(i)
+			.chain(s.buffer.iter().enumerate().take(i))
+			.rfind(|(_, l)| r.is_match(l))
+			.ok_or(CommandError::new("no match"))?,
 	};
 	s.last_match.0 = Some(i);
 
@@ -203,17 +209,13 @@ fn handle_command(
 		}
 		Some(AddressRange::Next(re)) => {
 			if command.is_none() {
-				if flags == PrintFlag::None {
-					flags = PrintFlag::Print;
-				}
+				flags = print_flag_set(flags, PrintFlag::Print);
 			}
 			find_regex(s, re.as_ref(), true)?
 		}
 		Some(AddressRange::Prev(re)) => {
 			if command.is_none() {
-				if flags == PrintFlag::None {
-					flags = PrintFlag::Print;
-				}
+				flags = print_flag_set(flags, PrintFlag::Print);
 			}
 			find_regex(s, re.as_ref(), false)?
 		}
@@ -227,7 +229,7 @@ fn handle_command(
 		None => {
 			if flags == PrintFlag::None {
 				s.line = is_line(from, to)?;
-				flags = PrintFlag::Print;
+				flags = print_flag_set(flags, PrintFlag::Print);
 			}
 		}
 		Some(com @ Command::Append) | Some(com @ Command::Insert) => {
@@ -294,7 +296,8 @@ fn handle_command(
 			let buf = match f {
 				Some(f) => read_to_vec(&f),
 				_ => read_to_vec(&s.file),
-			}.map_err(|_| CommandError::new("invalid path"))?;
+			}
+			.map_err(|_| CommandError::new("invalid path"))?;
 			buffer_insert(s, is_line(from, to)? + 1, buf);
 		}
 		Some(Command::Write(f)) => {

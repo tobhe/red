@@ -69,6 +69,14 @@ pub enum PrintFlag {
 	Number,
 }
 
+pub fn print_flag_set(fs: PrintFlag, flag: PrintFlag) -> PrintFlag {
+	if fs == PrintFlag::None || (fs == PrintFlag::Print && flag == PrintFlag::Number) {
+		flag
+	} else {
+		fs
+	}
+}
+
 pub fn parse_command(i: &str) -> IResult<&str, (Option<AddressRange>, Option<Command>, PrintFlag)> {
 	let (i, (r, c, f)) = terminated(
 		tuple((
@@ -88,13 +96,8 @@ pub fn parse_command(i: &str) -> IResult<&str, (Option<AddressRange>, Option<Com
 		(
 			r,
 			c,
-			f.into_iter().fold(PrintFlag::None, |fs, flag| {
-				if fs == PrintFlag::None || (fs == PrintFlag::Print && flag == PrintFlag::Number) {
-					flag
-				} else {
-					fs
-				}
-			}),
+			f.into_iter()
+				.fold(PrintFlag::None, |fs, flag| print_flag_set(fs, flag)),
 		),
 	))
 }

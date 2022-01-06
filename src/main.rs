@@ -39,7 +39,6 @@ struct State {
 	last_match: (Option<usize>, Option<regex::Regex>),
 	line: usize,
 	marks: [Option<usize>; 26],
-	mode: Mode,
 	prompt: bool,
 	total: usize,
 	verbose: bool,
@@ -54,7 +53,6 @@ impl Default for State {
 			last_match: (None, None),
 			line: 0,
 			marks: [None; 26],
-			mode: Mode::CommandMode,
 			prompt: false,
 			total: 1,
 			verbose: false,
@@ -64,12 +62,6 @@ impl Default for State {
 
 fn buf_as_string(b: &Vec<String>) -> String {
 	b.iter().fold(String::new(), |e, l| e + l + "\n")
-}
-
-#[derive(PartialEq)]
-enum Mode {
-	CommandMode,
-	InsertMode(usize, PrintFlag),
 }
 
 fn read_to_vec(f: &str) -> Result<Vec<String>> {
@@ -192,6 +184,20 @@ fn is_line(from: usize, to: usize) -> Result<usize> {
 	Ok(to)
 }
 
+fn handle_insert() -> Vec<String> {
+	let mut buf = Vec::new();
+	let mut input = String::new();
+	loop {
+		io::stdin().read_line(&mut input).unwrap();
+		if parse_terminator(&input).is_ok() {
+			return buf;
+		} else {
+			buf.push(String::from(&input[..input.len() - 1]));
+		}
+		input.clear();
+	}
+}
+
 fn handle_command(
 	s: &mut State,
 	c: (Option<AddressRange>, Option<Command>, PrintFlag),
@@ -238,8 +244,7 @@ fn handle_command(
 				Command::Insert => is_line(from, to)?,
 				_ => unreachable!(),
 			};
-			s.mode = Mode::InsertMode(line, flags);
-			return Ok(());
+			buffer_insert(s, line, handle_insert());
 		}
 		Some(com @ Command::Change) | Some(com @ Command::Delete) => {
 			s.buffer.splice(from..(to + 1), iter::empty::<String>());
@@ -250,8 +255,7 @@ fn handle_command(
 			}
 			match com {
 				Command::Change => {
-					s.mode = Mode::InsertMode(from, flags);
-					return Ok(());
+					buffer_insert(s, from, handle_insert());
 				}
 				Command::Delete => s.changed = true,
 				_ => unreachable!(),
@@ -330,38 +334,21 @@ fn main() {
 		Default::default()
 	};
 
-	let mut buf = Vec::new();
 	loop {
 		let mut input = String::new();
-		if state.mode == Mode::CommandMode && state.prompt == true {
+		if state.prompt == true {
 			print!("* ");
 			io::stdout().flush().unwrap();
 		}
 		io::stdin().read_line(&mut input).unwrap();
-		match state.mode {
-			Mode::CommandMode => {
-				parse_command(&input)
-					.or(Err(CommandError::new("invalid command")))
-					.and_then(|(_, t)| handle_command(&mut state, t))
-					.unwrap_or_else(|e| {
-						println!("?");
-						if state.verbose == true {
-							println!("{}", e);
-						}
-					});
-			}
-			Mode::InsertMode(l, flags) => {
-				if parse_terminator(&input).is_ok() {
-					buffer_insert(&mut state, l, buf);
-					buf = Vec::new();
-					if flags != PrintFlag::None {
-						print_range(&state, l, l, flags);
-					}
-					state.mode = Mode::CommandMode;
-				} else {
-					buf.push(String::from(&input));
+		parse_command(&input)
+			.or(Err(CommandError::new("invalid command")))
+			.and_then(|(_, t)| handle_command(&mut state, t))
+			.unwrap_or_else(|e| {
+				println!("?");
+				if state.verbose == true {
+					println!("{}", e);
 				}
-			}
-		}
+			});
 	}
 }

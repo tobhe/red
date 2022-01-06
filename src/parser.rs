@@ -46,15 +46,15 @@ pub enum Address {
  */
 #[derive(Debug)]
 pub enum Command {
-	Append,                // (.)a		Append text to the buffer
-	Change,                // (.,.)c	Change line in buffer
+	Append(Vec<String>),   // (.)a		Append text to the buffer
+	Change(Vec<String>),   // (.,.)c	Change line in buffer
 	CurLine,               // =		Print line number
 	Delete,                // (.,.)d	Delete lines
 	Edit(Option<String>),  // e file	Edit file
 	Exec(String),          // !cmd		Execute command
 	File(String),          // f file        Set default filename
 	Help,                  // H		Toggle error explanations
-	Insert,                // (.)i		Insert text before current line
+	Insert(Vec<String>),   // (.)i		Insert text before current line
 	Mark(u8),              // kx		Marks a line with a lower case letter
 	Prompt,                // P		Enable * prompt
 	Read(Option<String>),  // ($)r		Reads file to after the addressed line
@@ -106,11 +106,11 @@ pub fn parse_command(i: &str) -> IResult<&str, (Option<AddressRange>, Option<Com
 fn parse_simple_cmd(i: &str) -> IResult<&str, Command> {
 	let (i, c) = anychar(i)?;
 	let cmd = match c {
-		'a' => Command::Append,
-		'c' => Command::Change,
+		'a' => Command::Append(Vec::new()),
+		'c' => Command::Change(Vec::new()),
 		'd' => Command::Delete,
 		'H' => Command::Help,
-		'i' => Command::Insert,
+		'i' => Command::Insert(Vec::new()),
 		'P' => Command::Prompt,
 		'q' => Command::Quit,
 		'=' => Command::CurLine,
@@ -154,9 +154,9 @@ fn parse_path(i: &str) -> IResult<&str, &str> {
 }
 
 // Insert Mode
-pub fn parse_terminator(i: &str) -> IResult<&str, Command> {
+pub fn parse_terminator(i: &str) -> IResult<&str, ()> {
 	let (i, _) = terminated(char('.'), newline)(i)?;
-	Ok((i, Command::Append))
+	Ok((i, ()))
 }
 
 // Helpers

@@ -184,13 +184,12 @@ fn is_line(from: usize, to: usize) -> Result<usize> {
 	Ok(to)
 }
 
-fn handle_insert() -> Vec<String> {
-	let mut buf = Vec::new();
+fn input_to_buffer(buf: &mut Vec<String>) {
 	let mut input = String::new();
 	loop {
 		io::stdin().read_line(&mut input).unwrap();
 		if parse_terminator(&input).is_ok() {
-			return buf;
+			return;
 		} else {
 			buf.push(String::from(&input[..input.len() - 1]));
 		}
@@ -202,7 +201,7 @@ fn handle_command(
 	s: &mut State,
 	c: (Option<AddressRange>, Option<Command>, PrintFlag),
 ) -> Result<()> {
-	let (range, command, mut flags) = c;
+	let (range, mut command, mut flags) = c;
 
 	let (from, to) = match range {
 		Some(AddressRange::Range(f, t)) => {
@@ -231,6 +230,14 @@ fn handle_command(
 		),
 	};
 
+	// Get input if needed
+	match command {
+		Some(Command::Append(ref mut b))
+		| Some(Command::Insert(ref mut b))
+		| Some(Command::Change(ref mut b)) => input_to_buffer(b),
+		_ => {}
+	};
+
 	match command {
 		None => {
 			if flags == PrintFlag::None {
@@ -238,15 +245,12 @@ fn handle_command(
 				flags = print_flag_set(flags, PrintFlag::Print);
 			}
 		}
-		Some(com @ Command::Append) | Some(com @ Command::Insert) => {
-			let line = match com {
-				Command::Append => is_line(from, to)? + 1,
-				Command::Insert => is_line(from, to)?,
-				_ => unreachable!(),
-			};
-			buffer_insert(s, line, handle_insert());
-		}
-		Some(com @ Command::Change) | Some(com @ Command::Delete) => {
+		Some(com @ Command::Append(_)) | Some(com @ Command::Insert(_)) => match com {
+			Command::Append(b) => buffer_insert(s, is_line(from, to)? + 1, b),
+			Command::Insert(b) => buffer_insert(s, is_line(from, to)?, b),
+			_ => unreachable!(),
+		},
+		Some(com @ Command::Change(_)) | Some(com @ Command::Delete) => {
 			s.buffer.splice(from..(to + 1), iter::empty::<String>());
 			let old = s.total;
 			s.total = s.buffer.len();
@@ -254,12 +258,11 @@ fn handle_command(
 				s.line = s.line - (old - s.total);
 			}
 			match com {
-				Command::Change => {
-					buffer_insert(s, from, handle_insert());
-				}
-				Command::Delete => s.changed = true,
+				Command::Change(b) => buffer_insert(s, from, b),
+				Command::Delete => {},
 				_ => unreachable!(),
-			}
+			};
+			s.changed = true;
 		}
 		Some(Command::CurLine) => {
 			println!("{}", s.line + 1);

@@ -14,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::Bound::{Excluded, Included, Unbounded};
@@ -24,6 +24,7 @@ use std::ops::RangeBounds;
 pub struct Buffer {
 	pub marks: [Option<usize>; 26],
 	pub changed: bool,
+	pub curline: usize,
 
 	lines: Vec<String>,
 }
@@ -34,6 +35,7 @@ impl Buffer {
 			lines: Vec::new(),
 			marks: [None; 26],
 			changed: false,
+			curline: 0,
 		}
 	}
 
@@ -54,7 +56,7 @@ impl Buffer {
 	{
 		let old = self.lines.len() as i64;
 		self.lines.splice(range.clone(), replace_with);
-		let diff = old - (self.lines.len() as i64);
+		let diff = (self.lines.len() as i64) - old;
 
 		// Remove marks in deleted range,
 		for mark in self.marks.iter_mut() {
@@ -62,7 +64,7 @@ impl Buffer {
 				if range.contains(index) {
 					None
 				} else if range_after(&range, index) {
-					Some(usize::try_from((*index as i64) - diff).unwrap())
+					Some(usize::try_from((*index as i64) + diff).unwrap())
 				} else {
 					Some(*index)
 				}
@@ -70,6 +72,16 @@ impl Buffer {
 				*mark
 			}
 		}
+
+		// Update line to end of insertion/deletion
+		self.curline = match range.end_bound() {
+			Included(end) => (*end as i64) + diff,
+			Excluded(end) => (*end as i64) + diff - 1,
+			Unbounded => old + diff,
+		}
+		.try_into()
+		.unwrap_or(0);
+
 		self.changed = true;
 	}
 
@@ -109,10 +121,17 @@ impl IntoIterator for Buffer {
 impl FromIterator<String> for Buffer {
 	#[inline]
 	fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Buffer {
+		let lines = Vec::<String>::from_iter(iter.into_iter());
+		let last = if lines.len() > 0 {
+			lines.len() - 1
+		} else {
+			lines.len()
+		};
 		Buffer {
-			lines: Vec::<String>::from_iter(iter.into_iter()),
+			lines: lines,
 			marks: [None; 26],
 			changed: false,
+			curline: last,
 		}
 	}
 }

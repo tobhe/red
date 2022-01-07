@@ -23,7 +23,6 @@ use crate::error::CommandError;
 use crate::parser::{
 	parse_command, parse_terminator, print_flag_set, Address, AddressRange, Command, PrintFlag,
 };
-use std::cmp::min;
 use std::convert::TryFrom;
 use std::env;
 use std::fs::{self, File};
@@ -39,7 +38,6 @@ struct State {
 	buffer: Buffer,
 	file: String,
 	last_match: (Option<usize>, Option<regex::Regex>),
-	line: usize,
 	prompt: bool,
 	verbose: bool,
 }
@@ -50,7 +48,6 @@ impl Default for State {
 			buffer: Buffer::new(),
 			file: String::from(""),
 			last_match: (None, None),
-			line: 0,
 			prompt: false,
 			verbose: false,
 		}
@@ -74,13 +71,7 @@ fn read_file(f: &str) -> Result<State> {
 	}
 	println!("{}", len);
 
-	let last = if buf.len() > 0 {
-		buf.len() - 1
-	} else {
-		buf.len()
-	};
 	Ok(State {
-		line: last,
 		file: String::from(f),
 		buffer: buf,
 		..State::default()
@@ -93,11 +84,10 @@ fn write_file(s: &State, f: &str) -> Result<()> {
 }
 
 fn buffer_insert(s: &mut State, line: usize, buf: Buffer) {
-	s.line = min(s.line + buf.len(), s.buffer.len());
 	s.buffer.replace_iter(line..line, buf);
 }
 
-fn update_line(s: &mut State, l: Address) -> Result<usize> {
+fn line_to_index(s: &mut State, l: Address) -> Result<usize> {
 	let newline = match l {
 		Address::Abs(c) => {
 			if c < 0 {
@@ -106,16 +96,12 @@ fn update_line(s: &mut State, l: Address) -> Result<usize> {
 				usize::try_from(c)?
 			}
 		}
-		Address::Rel(c) => usize::try_from(i32::try_from(s.line)? + c)?,
+		Address::Rel(c) => usize::try_from(i32::try_from(s.buffer.curline)? + c)?,
 		Address::Mark(m) => {
 			s.buffer.marks[usize::from(m)].ok_or(CommandError::new("invalid mark"))?
 		}
 	};
-	if newline < s.buffer.len() + 1 {
-		Ok(newline)
-	} else {
-		Err(CommandError::new("invalid address"))
-	}
+	Ok(newline)
 }
 
 fn print_range(s: &State, from: usize, to: usize, flags: PrintFlag) {
@@ -135,7 +121,7 @@ fn print_range(s: &State, from: usize, to: usize, flags: PrintFlag) {
 fn find_regex(s: &mut State, regex: Option<&String>, forward: bool) -> Result<(usize, usize)> {
 	let (i, r) = if let Some(re) = regex {
 		s.last_match.1 = Some(Regex::new(&re).map_err(|_| CommandError::new("invalid regex"))?);
-		(s.line, s.last_match.1.as_ref().unwrap())
+		(s.buffer.curline, s.last_match.1.as_ref().unwrap())
 	} else {
 		(
 			s.last_match
@@ -178,6 +164,14 @@ fn is_line(from: usize, to: usize) -> Result<usize> {
 	Ok(to)
 }
 
+fn is_valid(s: &State, i: usize) -> Result<usize> {
+	if i < s.buffer.len() {
+		Ok(i)
+	} else {
+		Err(CommandError::new("invalid address"))
+	}
+}
+
 fn input_to_buffer(buf: &mut Buffer) {
 	let mut input = String::new();
 	loop {
@@ -194,8 +188,8 @@ fn input_to_buffer(buf: &mut Buffer) {
 fn extract_addr_range(s: &mut State, range: Option<AddressRange>) -> Result<(usize, usize)> {
 	match range {
 		Some(AddressRange::Range(f, t)) => {
-			let from = update_line(s, f)?;
-			let to = update_line(s, t)?;
+			let from = line_to_index(s, f)?;
+			let to = line_to_index(s, t)?;
 			if from > to {
 				return Err(CommandError::new("invalid address"));
 			}
@@ -214,8 +208,8 @@ fn extract_addr_range(s: &mut State, range: Option<AddressRange>) -> Result<(usi
 			Ok(find_regex(s, re.as_ref(), false)?)
 		}
 		None => Ok((
-			update_line(s, Address::Rel(0))?,
-			update_line(s, Address::Rel(0))?,
+			line_to_index(s, Address::Rel(0))?,
+			line_to_index(s, Address::Rel(0))?,
 		)),
 	}
 }
@@ -238,31 +232,38 @@ fn exec_command(
 
 	match command {
 		None => {
+			is_valid(s, from)?;
+			is_valid(s, to)?;
 			if flags == PrintFlag::None {
-				s.line = is_line(from, to)?;
+				s.buffer.curline = is_line(from, to)?;
 				flags = print_flag_set(flags, PrintFlag::Print);
 			}
 		}
-		Some(com @ Command::Append(_)) | Some(com @ Command::Insert(_)) => match com {
-			Command::Append(b) => buffer_insert(s, is_line(from, to)? + 1, b),
-			Command::Insert(b) => buffer_insert(s, is_line(from, to)?, b),
-			_ => unreachable!(),
-		},
-		Some(com @ Command::Change(_)) | Some(com @ Command::Delete) => {
-			let old = s.buffer.len();
-			s.buffer
-				.replace_iter(from..(to + 1), iter::empty::<String>());
-			if s.line > to {
-				s.line = s.line - (old - s.buffer.len());
-			}
+		Some(com @ Command::Append(_)) | Some(com @ Command::Insert(_)) => {
+			let line = is_line(from, to)?;
+
 			match com {
-				Command::Change(b) => buffer_insert(s, from, b),
-				Command::Delete => {}
+				Command::Append(b) => buffer_insert(s, is_valid(s, line + 1).unwrap_or(line), b),
+				Command::Insert(b) => buffer_insert(s, line, b),
+				_ => unreachable!(),
+			}
+		}
+		Some(com @ Command::Change(_)) | Some(com @ Command::Delete) => {
+			is_valid(s, from)?;
+			is_valid(s, to)?;
+			match com {
+				Command::Change(b) => s.buffer.replace_iter(from..(to + 1), b),
+				Command::Delete => {
+					s.buffer
+						.replace_iter(from..(to + 1), iter::empty::<String>());
+					// Delete is special as it wants a current line after the deletion
+					s.buffer.curline = is_valid(s, s.buffer.curline + 1).unwrap_or(s.buffer.curline);
+				}
 				_ => unreachable!(),
 			};
 		}
 		Some(Command::CurLine) => {
-			println!("{}", s.line + 1);
+			println!("{}", s.buffer.curline + 1);
 		}
 		Some(Command::Edit(f)) => {
 			if s.buffer.changed == true {
@@ -291,6 +292,8 @@ fn exec_command(
 			s.verbose = !s.verbose;
 		}
 		Some(Command::Mark(m)) => {
+			is_valid(s, from)?;
+			is_valid(s, to)?;
 			s.buffer.marks[usize::from(m)] = Some(is_line(from, to)?);
 		}
 		Some(Command::Prompt) => {

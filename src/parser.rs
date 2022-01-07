@@ -16,6 +16,7 @@
 
 extern crate nom;
 
+use crate::buffer::Buffer;
 use nom::{
 	branch::alt,
 	character::complete::{anychar, char, i32, newline, none_of},
@@ -46,15 +47,15 @@ pub enum Address {
  */
 #[derive(Debug)]
 pub enum Command {
-	Append(Vec<String>),   // (.)a		Append text to the buffer
-	Change(Vec<String>),   // (.,.)c	Change line in buffer
+	Append(Buffer),        // (.)a		Append text to the buffer
+	Change(Buffer),        // (.,.)c	Change line in buffer
 	CurLine,               // =		Print line number
 	Delete,                // (.,.)d	Delete lines
 	Edit(Option<String>),  // e file	Edit file
 	Exec(String),          // !cmd		Execute command
 	File(String),          // f file        Set default filename
 	Help,                  // H		Toggle error explanations
-	Insert(Vec<String>),   // (.)i		Insert text before current line
+	Insert(Buffer),        // (.)i		Insert text before current line
 	Mark(u8),              // kx		Marks a line with a lower case letter
 	Prompt,                // P		Enable * prompt
 	Read(Option<String>),  // ($)r		Reads file to after the addressed line
@@ -106,11 +107,11 @@ pub fn parse_command(i: &str) -> IResult<&str, (Option<AddressRange>, Option<Com
 fn parse_simple_cmd(i: &str) -> IResult<&str, Command> {
 	let (i, c) = anychar(i)?;
 	let cmd = match c {
-		'a' => Command::Append(Vec::new()),
-		'c' => Command::Change(Vec::new()),
+		'a' => Command::Append(Buffer::new()),
+		'c' => Command::Change(Buffer::new()),
 		'd' => Command::Delete,
 		'H' => Command::Help,
-		'i' => Command::Insert(Vec::new()),
+		'i' => Command::Insert(Buffer::new()),
 		'P' => Command::Prompt,
 		'q' => Command::Quit,
 		'=' => Command::CurLine,

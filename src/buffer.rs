@@ -14,19 +14,27 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+use std::convert::TryFrom;
 use std::fmt;
 use std::iter::FromIterator;
+use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::ops::RangeBounds;
-use std::vec::Splice;
 
 #[derive(Debug)]
 pub struct Buffer {
+	pub marks: [Option<usize>; 26],
+	pub changed: bool,
+
 	lines: Vec<String>,
 }
 
 impl Buffer {
 	pub const fn new() -> Self {
-		Buffer { lines: Vec::new() }
+		Buffer {
+			lines: Vec::new(),
+			marks: [None; 26],
+			changed: false,
+		}
 	}
 
 	#[inline]
@@ -39,13 +47,30 @@ impl Buffer {
 		self.lines.push(val)
 	}
 
-	#[inline]
-	pub fn splice<R, I>(&mut self, range: R, replace_with: I) -> Splice<'_, I::IntoIter>
+	pub fn replace_iter<R, I>(&mut self, range: R, replace_with: I)
 	where
-		R: RangeBounds<usize>,
+		R: RangeBounds<usize> + Clone,
 		I: IntoIterator<Item = String>,
 	{
-		self.lines.splice(range, replace_with)
+		let old = self.lines.len() as i64;
+		self.lines.splice(range.clone(), replace_with);
+		let diff = old - (self.lines.len() as i64);
+
+		// Remove marks in deleted range,
+		for mark in self.marks.iter_mut() {
+			*mark = if let Some(ref index) = mark {
+				if range.contains(index) {
+					None
+				} else if range_after(&range, index) {
+					Some(usize::try_from((*index as i64) - diff).unwrap())
+				} else {
+					Some(*index)
+				}
+			} else {
+				*mark
+			}
+		}
+		self.changed = true;
 	}
 
 	#[inline]
@@ -86,6 +111,19 @@ impl FromIterator<String> for Buffer {
 	fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Buffer {
 		Buffer {
 			lines: Vec::<String>::from_iter(iter.into_iter()),
+			marks: [None; 26],
+			changed: false,
 		}
+	}
+}
+
+fn range_after<R>(range: &R, item: &usize) -> bool
+where
+	R: RangeBounds<usize>,
+{
+	match range.end_bound() {
+		Included(end) => item > end,
+		Excluded(end) => item >= end,
+		Unbounded => false,
 	}
 }

@@ -37,11 +37,9 @@ type Result<T> = std::result::Result<T, CommandError>;
 
 struct State {
 	buffer: Buffer,
-	changed: bool,
 	file: String,
 	last_match: (Option<usize>, Option<regex::Regex>),
 	line: usize,
-	marks: [Option<usize>; 26],
 	prompt: bool,
 	verbose: bool,
 }
@@ -50,11 +48,9 @@ impl Default for State {
 	fn default() -> Self {
 		State {
 			buffer: Buffer::new(),
-			changed: false,
 			file: String::from(""),
 			last_match: (None, None),
 			line: 0,
-			marks: [None; 26],
 			prompt: false,
 			verbose: false,
 		}
@@ -98,8 +94,7 @@ fn write_file(s: &State, f: &str) -> Result<()> {
 
 fn buffer_insert(s: &mut State, line: usize, buf: Buffer) {
 	s.line = min(s.line + buf.len(), s.buffer.len());
-	s.buffer.splice(line..line, buf);
-	s.changed = true;
+	s.buffer.replace_iter(line..line, buf);
 }
 
 fn update_line(s: &mut State, l: Address) -> Result<usize> {
@@ -112,7 +107,9 @@ fn update_line(s: &mut State, l: Address) -> Result<usize> {
 			}
 		}
 		Address::Rel(c) => usize::try_from(i32::try_from(s.line)? + c)?,
-		Address::Mark(m) => s.marks[usize::from(m)].ok_or(CommandError::new("invalid mark"))?,
+		Address::Mark(m) => {
+			s.buffer.marks[usize::from(m)].ok_or(CommandError::new("invalid mark"))?
+		}
 	};
 	if newline < s.buffer.len() + 1 {
 		Ok(newline)
@@ -253,7 +250,8 @@ fn exec_command(
 		},
 		Some(com @ Command::Change(_)) | Some(com @ Command::Delete) => {
 			let old = s.buffer.len();
-			s.buffer.splice(from..(to + 1), iter::empty::<String>());
+			s.buffer
+				.replace_iter(from..(to + 1), iter::empty::<String>());
 			if s.line > to {
 				s.line = s.line - (old - s.buffer.len());
 			}
@@ -262,14 +260,13 @@ fn exec_command(
 				Command::Delete => {}
 				_ => unreachable!(),
 			};
-			s.changed = true;
 		}
 		Some(Command::CurLine) => {
 			println!("{}", s.line + 1);
 		}
 		Some(Command::Edit(f)) => {
-			if s.changed == true {
-				s.changed = false;
+			if s.buffer.changed == true {
+				s.buffer.changed = false;
 				return Err(CommandError::new("warning: file modified"));
 			}
 			if let Some(f) = f {
@@ -294,7 +291,7 @@ fn exec_command(
 			s.verbose = !s.verbose;
 		}
 		Some(Command::Mark(m)) => {
-			s.marks[usize::from(m)] = Some(is_line(from, to)?);
+			s.buffer.marks[usize::from(m)] = Some(is_line(from, to)?);
 		}
 		Some(Command::Prompt) => {
 			s.prompt = !s.prompt;
@@ -313,11 +310,10 @@ fn exec_command(
 			} else {
 				write_file(s, &s.file)?;
 			};
-			s.changed = false;
 		}
 		Some(Command::Quit) => {
-			if s.changed == true {
-				s.changed = false;
+			if s.buffer.changed == true {
+				s.buffer.changed = false;
 				return Err(CommandError::new("warning: file modified"));
 			}
 			process::exit(0);
@@ -353,6 +349,5 @@ fn main() {
 					println!("{}", e);
 				}
 			});
-		println!("line: {} total: {}", state.line, state.buffer.len());
 	}
 }

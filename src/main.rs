@@ -60,7 +60,7 @@ fn read_to_buffer(f: &str) -> Result<Buffer> {
 	Ok(Buffer::from_iter(lines.filter_map(|s| s.ok())))
 }
 
-fn read_file(f: &str) -> Result<State> {
+fn read_file(s: &State, f: &str) -> Result<State> {
 	let buf = read_to_buffer(&f)?;
 
 	// Print bytes
@@ -74,6 +74,8 @@ fn read_file(f: &str) -> Result<State> {
 	Ok(State {
 		file: String::from(f),
 		buffer: buf,
+		prompt: s.prompt,
+		verbose: s.verbose,
 		..State::default()
 	})
 }
@@ -257,7 +259,8 @@ fn exec_command(
 					s.buffer
 						.replace_iter(from..(to + 1), iter::empty::<String>());
 					// Delete is special as it wants a current line after the deletion
-					s.buffer.curline = is_valid(s, s.buffer.curline + 1).unwrap_or(s.buffer.curline);
+					s.buffer.curline =
+						is_valid(s, s.buffer.curline + 1).unwrap_or(s.buffer.curline);
 				}
 				_ => unreachable!(),
 			};
@@ -271,10 +274,10 @@ fn exec_command(
 				return Err(CommandError::new("warning: file modified"));
 			}
 			if let Some(f) = f {
-				*s = read_file(&f)?;
+				*s = read_file(&s, &f)?;
 				s.file = f;
 			} else {
-				*s = read_file(&s.file)?;
+				*s = read_file(&s, &s.file)?;
 			}
 		}
 		Some(Command::Exec(c)) => {
@@ -331,7 +334,7 @@ fn exec_command(
 fn main() {
 	let args: Vec<String> = env::args().collect();
 	let mut state = if args.len() == 2 {
-		read_file(&args[1]).unwrap_or(Default::default())
+		read_file(&Default::default(), &args[1]).unwrap_or(Default::default())
 	} else {
 		Default::default()
 	};
